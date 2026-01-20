@@ -1,0 +1,399 @@
+name: Release Windows Installer with Code Signing
+
+# This workflow builds Windows installers (NSIS and MSI) with code signing
+# It supports both x64 and x86 architectures with auto-update functionality
+
+on:
+  workflow_dispatch: # Allows manual trigger from GitHub UI
+
+jobs:
+  release-windows:
+    permissions:
+      contents: write # Required to create releases and upload assets
+
+    strategy:
+      fail-fast: false # Continue building other targets if one fails
+      matrix:
+        include:
+          # 64-bit Windows (x64) - Most common
+          - platform: 'windows-latest'
+            args: ''
+            arch: 'x64'
+            rust_target: 'x86_64-pc-windows-msvc'
+
+          # 32-bit Windows (x86) - Uncomment if you need 32-bit support
+          # - platform: 'windows-latest'
+          #   args: '--target i686-pc-windows-msvc'
+          #   arch: 'x86'
+          #   rust_target: 'i686-pc-windows-msvc'
+
+          # ARM64 Windows - Uncomment if you need ARM64 support
+          # Note: Requires ARM64 build tools installed in Visual Studio
+          # - platform: 'windows-latest'
+          #   args: '--target aarch64-pc-windows-msvc --bundles nsis'
+          #   arch: 'arm64'
+          #   rust_target: 'aarch64-pc-windows-msvc'
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      # ============================================================
+      # SETUP ENVIRONMENT
+      # ============================================================
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: 'npm' # Change to 'yarn', 'pnpm', or 'bun' if needed
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # Install targets for all architectures you're building
+          targets: x86_64-pc-windows-msvc
+          # Add if building for 32-bit: ,i686-pc-windows-msvc
+          # Add if building for ARM64: ,aarch64-pc-windows-msvc
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install frontend dependencies
+        run: npm install
+        # If using yarn: run: yarn install
+        # If using pnpm: run: pnpm install
+        # If using bun: run: bun install
+
+      # ============================================================
+      # WINDOWS CODE SIGNING CERTIFICATE SETUP
+      # ============================================================
+
+      - name: Import Windows code signing certificate
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        shell: powershell
+        run: |
+          Write-Host "=========================================="
+          Write-Host "WINDOWS CODE SIGNING CERTIFICATE IMPORT"
+          Write-Host "=========================================="
+
+          Write-Host "Step 1: Creating certificate directory"
+          New-Item -ItemType Directory -Path certificate -Force | Out-Null
+
+          Write-Host "Step 2: Decoding base64 certificate"
+          Set-Content -Path certificate/tempCert.txt -Value $env:WINDOWS_CERTIFICATE
+
+          Write-Host "Step 3: Converting to PFX format"
+          certutil -decode certificate/tempCert.txt certificate/certificate.pfx
+
+          Write-Host "Step 4: Cleaning up temporary file"
+          Remove-Item -Path certificate -Include tempCert.txt -Force
+
+          Write-Host "Step 5: Importing certificate to Local Machine store"
+          $securePfxPassword = ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -Force -AsPlainText
+          Import-PfxCertificate `
+            -FilePath certificate/certificate.pfx `
+            -CertStoreLocation Cert:\LocalMachine\My `
+            -Password $securePfxPassword | Out-Null
+
+          Write-Host "Step 6: Verifying certificate installation"
+          $installedCerts = Get-ChildItem -Path Cert:\LocalMachine\My
+          Write-Host "Found $($installedCerts.Count) certificate(s) in store"
+
+          foreach ($cert in $installedCerts) {
+            Write-Host "  - Subject: $($cert.Subject)"
+            Write-Host "    Thumbprint: $($cert.Thumbprint)"
+            Write-Host "    Expires: $($cert.NotAfter)"
+          }
+
+          Write-Host "=========================================="
+          Write-Host "Certificate import completed successfully"
+          Write-Host "=========================================="
+
+      - name: Extract and validate certificate information
+        shell: powershell
+        run: |
+          Write-Host "==> Extracting certificate information"
+
+          # Get the most recently imported certificate
+          $cert = Get-ChildItem -Path Cert:\LocalMachine\My | 
+                  Sort-Object NotBefore -Descending | 
+                  Select-Object -First 1
+
+          if ($null -eq $cert) {
+            Write-Error "No certificate found in store!"
+            exit 1
+          }
+
+          $thumbprint = $cert.Thumbprint
+          $subject = $cert.Subject
+          $issuer = $cert.Issuer
+          $notAfter = $cert.NotAfter
+
+          Write-Host "Certificate Details:"
+          Write-Host "  Subject: $subject"
+          Write-Host "  Issuer: $issuer"
+          Write-Host "  Thumbprint: $thumbprint"
+          Write-Host "  Expires: $notAfter"
+
+          # Validate certificate hasn't expired
+          if ($cert.NotAfter -lt (Get-Date)) {
+            Write-Error "Certificate has expired!"
+            exit 1
+          }
+
+          # Set environment variable for later use
+          echo "CERTIFICATE_THUMBPRINT=$thumbprint" >> $env:GITHUB_ENV
+
+          Write-Host "==> Certificate validation successful"
+
+      # ============================================================
+      # BUILD WINDOWS INSTALLERS WITH CODE SIGNING
+      # ============================================================
+
+      - name: Build Tauri app with code signing and updater
+        uses: tauri-apps/tauri-action@v0
+        env:
+          # GitHub token for creating releases
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+          # === UPDATER SIGNING KEYS ===
+          # These are DIFFERENT from Windows code signing!
+          # Generate with: tauri signer generate -w ~/.tauri/myapp.key
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+        with:
+          # === RELEASE CONFIGURATION ===
+          tagName: v__VERSION__ # Auto-replaced with app version
+          releaseName: 'v__VERSION__'
+
+          releaseBody: |
+            ## 🎉 What's New in v__VERSION__
+
+            ### ✨ Features
+            - List your new features here
+
+            ### 🐛 Bug Fixes
+            - List bug fixes here
+
+            ### 📦 Installation Options
+
+            **New Installation:**
+
+            Choose one of the following installers:
+
+            1. **NSIS Installer (Recommended)** - `*-setup.exe`
+               - Modern installer with more customization
+               - Smaller download size
+               - Supports auto-updates
+               - Works on Windows 10 (1809+) and Windows 11
+
+            2. **MSI Installer** - `*.msi`
+               - Traditional Windows installer
+               - Better for enterprise/Group Policy deployment
+               - Works on Windows 10 (1809+) and Windows 11
+
+            **Important Notes:**
+            - Windows may show SmartScreen warning on first download
+            - Click "More info" → "Run anyway" if you see the warning
+            - This is normal for new/updated certificates
+            - The app will auto-update in the future
+
+            **Existing Users:**
+            - The app will automatically notify you of this update
+            - Or manually check: Menu → About → Check for Updates
+            - Updates install seamlessly in the background
+
+            ### 🖥️ System Requirements
+            - **OS:** Windows 10 version 1809 or later, Windows 11
+            - **WebView2:** Automatically installed if missing
+            - **Architecture:** x64 (64-bit) systems
+
+            ### 🔒 Security
+            All installers are digitally signed and verified by Windows.
+
+            ---
+
+            **Full Changelog**: https://github.com/${{ github.repository }}/compare/previous...v__VERSION__
+
+          releaseDraft: true # Set to false to publish immediately
+          prerelease: false # Set to true for beta/RC releases
+
+          # === BUILD CONFIGURATION ===
+          args: ${{ matrix.args }}
+
+          # === UPDATER CONFIGURATION ===
+          uploadUpdaterJson: true # Upload latest.json for auto-updater
+          updaterJsonPreferNsis: true # Prefer NSIS over MSI for updates
+          uploadUpdaterSignatures: true # Upload .sig files for verification
+
+          # === OPTIONAL CONFIGURATIONS ===
+
+          # Uncomment if Tauri project not in repository root
+          # projectPath: './my-tauri-app'
+
+          # Uncomment to also upload to GitHub Actions artifacts
+          # uploadWorkflowArtifacts: true
+
+      # ============================================================
+      # VERIFY SIGNATURES
+      # ============================================================
+
+      - name: Verify code signatures
+        if: success()
+        shell: powershell
+        run: |
+          Write-Host "=========================================="
+          Write-Host "VERIFYING CODE SIGNATURES"
+          Write-Host "=========================================="
+
+          # Find all .exe and .msi files
+          $exeFiles = Get-ChildItem -Path "src-tauri/target/${{ matrix.rust_target }}/release/bundle" -Recurse -Include *.exe
+          $msiFiles = Get-ChildItem -Path "src-tauri/target/${{ matrix.rust_target }}/release/bundle" -Recurse -Include *.msi
+
+          $allFiles = $exeFiles + $msiFiles
+
+          foreach ($file in $allFiles) {
+            Write-Host ""
+            Write-Host "Verifying: $($file.Name)"
+            Write-Host "Path: $($file.FullName)"
+            
+            # Verify signature using signtool
+            $result = & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" verify /pa $file.FullName 2>&1
+            
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "✓ Signature valid" -ForegroundColor Green
+            } else {
+              Write-Host "✗ Signature verification failed!" -ForegroundColor Red
+              Write-Host "Error: $result"
+              exit 1
+            }
+          }
+
+          Write-Host ""
+          Write-Host "=========================================="
+          Write-Host "All signatures verified successfully!"
+          Write-Host "=========================================="
+
+      # ============================================================
+      # CLEANUP
+      # ============================================================
+
+      - name: Cleanup certificate files
+        if: always() # Run even if previous steps fail
+        shell: powershell
+        run: |
+          Write-Host "==> Cleaning up certificate files"
+
+          # Remove certificate directory
+          if (Test-Path -Path certificate) {
+            Remove-Item -Path certificate -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Host "Certificate directory removed"
+          }
+
+          # Optionally remove certificate from store (uncomment if desired)
+          # $cert = Get-ChildItem -Path Cert:\LocalMachine\My | Select-Object -First 1
+          # if ($cert) {
+          #   Remove-Item -Path "Cert:\LocalMachine\My\$($cert.Thumbprint)" -Force
+          #   Write-Host "Certificate removed from store"
+          # }
+
+          Write-Host "==> Cleanup completed"
+
+      # ============================================================
+      # UPLOAD BUILD ARTIFACTS FOR VERIFICATION
+      # ============================================================
+
+      - name: Upload installers as workflow artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.arch }}-installers
+          path: |
+            src-tauri/target/${{ matrix.rust_target }}/release/bundle/nsis/*.exe
+            src-tauri/target/${{ matrix.rust_target }}/release/bundle/nsis/*.exe.sig
+            src-tauri/target/${{ matrix.rust_target }}/release/bundle/msi/*.msi
+            src-tauri/target/${{ matrix.rust_target }}/release/bundle/msi/*.msi.sig
+          if-no-files-found: warn
+
+      # ============================================================
+      # DISPLAY BUILD INFORMATION
+      # ============================================================
+
+      - name: Display build information
+        if: success()
+        shell: powershell
+        run: |
+          Write-Host ""
+          Write-Host "=========================================="
+          Write-Host "BUILD COMPLETED SUCCESSFULLY!"
+          Write-Host "=========================================="
+          Write-Host "Architecture: ${{ matrix.arch }}"
+          Write-Host "Rust Target: ${{ matrix.rust_target }}"
+          Write-Host ""
+
+          Write-Host "==> NSIS Installers:"
+          Get-ChildItem -Path "src-tauri/target/${{ matrix.rust_target }}/release/bundle/nsis" -ErrorAction SilentlyContinue | 
+            Format-Table Name, Length, LastWriteTime -AutoSize
+
+          Write-Host ""
+          Write-Host "==> MSI Installers:"
+          Get-ChildItem -Path "src-tauri/target/${{ matrix.rust_target }}/release/bundle/msi" -ErrorAction SilentlyContinue | 
+            Format-Table Name, Length, LastWriteTime -AutoSize
+
+          Write-Host ""
+          Write-Host "==> Updater Files:"
+          Get-ChildItem -Path "src-tauri/target/${{ matrix.rust_target }}/release/bundle" -Recurse -Include *.sig | 
+            Format-Table Name, Length, LastWriteTime -AutoSize
+
+          Write-Host "=========================================="
+          Write-Host "All artifacts have been uploaded to the release!"
+          Write-Host "=========================================="
+
+# ============================================================
+# OPTIONAL: CROSS-PLATFORM BUILD (Advanced)
+# ============================================================
+# Uncomment this job if you want to build Windows installers from Linux/macOS
+# Note: This only works for NSIS installers, not MSI
+
+#   build-windows-crossplatform:
+#     runs-on: ubuntu-latest
+#     permissions:
+#       contents: write
+#
+#     steps:
+#       - uses: actions/checkout@v4
+#
+#       - name: Setup Node.js
+#         uses: actions/setup-node@v4
+#         with:
+#           node-version: 'lts/*'
+#
+#       - name: Install dependencies
+#         run: |
+#           sudo apt-get update
+#           sudo apt-get install -y nsis lld llvm
+#
+#       - name: Install Rust
+#         uses: dtolnay/rust-toolchain@stable
+#
+#       - name: Install cargo-xwin
+#         run: cargo install cargo-xwin
+#
+#       - name: Install frontend dependencies
+#         run: npm install
+#
+#       - name: Build with cargo-xwin
+#         run: |
+#           cd src-tauri
+#           cargo xwin build --release --target x86_64-pc-windows-msvc
+#
+#       # Note: Signing requires custom sign command for cross-platform builds
+#       # See documentation for Azure Key Vault or other cloud signing options

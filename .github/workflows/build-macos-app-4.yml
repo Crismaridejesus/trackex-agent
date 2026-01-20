@@ -95,7 +95,6 @@ jobs:
           args: ${{ matrix.args }}
           uploadUpdaterJson: true
           updaterJsonPreferNsis: false
-          uploadUpdaterSignatures: true
 
       - name: Cleanup keychain
         if: always()
@@ -115,4 +114,12 @@ jobs:
             src-tauri/target/${{ matrix.rust_target }}/release/bundle/macos/*.tar.gz
             src-tauri/target/${{ matrix.rust_target }}/release/bundle/macos/*.sig
             src-tauri/target/${{ matrix.rust_target }}/release/bundle/dmg/*.dmg
+            src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app
+            src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.tar.gz
+            src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.sig
+            src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+            src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.app
+            src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.tar.gz
+            src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.sig
+            src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
           if-no-files-found: warn
