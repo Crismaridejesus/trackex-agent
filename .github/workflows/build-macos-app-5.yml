@@ -231,7 +231,6 @@ jobs:
             src-tauri/target/${{ matrix.rust_target }}/release/bundle/macos/*.tar.gz
             src-tauri/target/${{ matrix.rust_target }}/release/bundle/macos/*.sig
             src-tauri/target/${{ matrix.rust_target }}/release/bundle/dmg/*.dmg
-          retention-days: 30
           if-no-files-found: warn
 
       # ============================================================

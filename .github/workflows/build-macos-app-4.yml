@@ -83,6 +83,9 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: v__VERSION__
           releaseName: 'App v__VERSION__'
@@ -92,8 +95,24 @@ jobs:
           args: ${{ matrix.args }}
           uploadUpdaterJson: true
           updaterJsonPreferNsis: false
+          uploadUpdaterSignatures: true
 
       - name: Cleanup keychain
         if: always()
         run: |
+          echo "==> Deleting temporary keychain"
           security delete-keychain build.keychain || true
+          echo "==> Removing certificate file"
+          rm -f certificate.p12 || true
+
+      - name: Upload build artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}-build
+          path: |
+            src-tauri/target/${{ matrix.rust_target }}/release/bundle/macos/*.app
+            src-tauri/target/${{ matrix.rust_target }}/release/bundle/macos/*.tar.gz
+            src-tauri/target/${{ matrix.rust_target }}/release/bundle/macos/*.sig
+            src-tauri/target/${{ matrix.rust_target }}/release/bundle/dmg/*.dmg
+          if-no-files-found: warn
