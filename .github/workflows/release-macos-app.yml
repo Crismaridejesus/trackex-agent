@@ -80,27 +80,11 @@ jobs:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_IDENTITY }}
-          # Choose one notarization method:
-          # Method 1: App Store Connect API
-          # APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          # APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          # APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
-          # Method 2: Apple ID (comment out method 1 if using this)
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          tagName: v__VERSION__
-          releaseName: 'App v__VERSION__'
-          releaseBody: 'See the assets to download and install this version.'
-          releaseDraft: true
-          prerelease: false
-          args: ${{ matrix.args }}
-          uploadUpdaterJson: true
-          updaterJsonPreferNsis: false
 
       - name: Cleanup keychain
         if: always()

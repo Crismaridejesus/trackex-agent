@@ -54,70 +54,8 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          tagName: v__VERSION__
-          releaseName: 'v__VERSION__'
-
-          releaseBody: |
-            ## 🎉 What's New in v__VERSION__
-
-            ### ✨ Features
-            - List your new features here
-
-            ### 🐛 Bug Fixes
-            - List bug fixes here
-
-            ### 📦 Installation Options
-
-            **New Installation:**
-
-            Choose one of the following installers:
-
-            1. **NSIS Installer (Recommended)** - `*-setup.exe`
-               - Modern installer with more customization
-               - Smaller download size
-               - Supports auto-updates
-               - Works on Windows 10 (1809+) and Windows 11
-
-            2. **MSI Installer** - `*.msi`
-               - Traditional Windows installer
-               - Better for enterprise/Group Policy deployment
-               - Works on Windows 10 (1809+) and Windows 11
-
-            **Important Notes:**
-            - Windows may show SmartScreen warning on first download
-            - Click "More info" → "Run anyway" if you see the warning
-            - This is normal for new/updated certificates
-            - The app will auto-update in the future
-
-            **Existing Users:**
-            - The app will automatically notify you of this update
-            - Or manually check: Menu → About → Check for Updates
-            - Updates install seamlessly in the background
-
-            ### 🖥️ System Requirements
-            - **OS:** Windows 10 version 1809 or later, Windows 11
-            - **WebView2:** Automatically installed if missing
-            - **Architecture:** x64 (64-bit) systems
-
-            ### 🔒 Security
-            All installers are digitally signed and verified by Windows.
-
-            ---
-
-            **Full Changelog**: https://github.com/${{ github.repository }}/compare/previous...v__VERSION__
-
-          releaseDraft: true
-          prerelease: false
-
-          args: ${{ matrix.args }}
-
-          uploadUpdaterJson: true
-          updaterJsonPreferNsis: true
-          uploadUpdaterSignatures: true
 
       - name: Upload installers as workflow artifacts
         if: success()
@@ -129,34 +67,8 @@ jobs:
             src-tauri/target/${{ matrix.rust_target }}/release/bundle/nsis/*.exe.sig
             src-tauri/target/${{ matrix.rust_target }}/release/bundle/msi/*.msi
             src-tauri/target/${{ matrix.rust_target }}/release/bundle/msi/*.msi.sig
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/nsis/*.exe.sig
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/msi/*.msi.sig
           if-no-files-found: warn
-
-      - name: Display build information
-        if: success()
-        shell: powershell
-        run: |
-          Write-Host ""
-          Write-Host "=========================================="
-          Write-Host "BUILD COMPLETED SUCCESSFULLY!"
-          Write-Host "=========================================="
-          Write-Host "Architecture: ${{ matrix.arch }}"
-          Write-Host "Rust Target: ${{ matrix.rust_target }}"
-          Write-Host ""
-
-          Write-Host "==> NSIS Installers:"
-          Get-ChildItem -Path "src-tauri/target/${{ matrix.rust_target }}/release/bundle/nsis" -ErrorAction SilentlyContinue | 
-            Format-Table Name, Length, LastWriteTime -AutoSize
-
-          Write-Host ""
-          Write-Host "==> MSI Installers:"
-          Get-ChildItem -Path "src-tauri/target/${{ matrix.rust_target }}/release/bundle/msi" -ErrorAction SilentlyContinue | 
-            Format-Table Name, Length, LastWriteTime -AutoSize
-
-          Write-Host ""
-          Write-Host "==> Updater Files:"
-          Get-ChildItem -Path "src-tauri/target/${{ matrix.rust_target }}/release/bundle" -Recurse -Include *.sig | 
-            Format-Table Name, Length, LastWriteTime -AutoSize
-
-          Write-Host "=========================================="
-          Write-Host "All artifacts have been uploaded to the release!"
-          Write-Host "=========================================="
