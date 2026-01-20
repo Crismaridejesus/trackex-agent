@@ -1,0 +1,195 @@
+name: Build MacOS App
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build MacOS
+    runs-on: macos-latest
+    env:
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_DEVELOPER_CERT_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'Desktop/trackex-agent/package-lock.json'
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+
+      - name: Create .env file
+        working-directory: Desktop/trackex-agent
+        run: |
+          echo "VITE_SERVER_URL=${{ secrets.VITE_SERVER_URL || 'https://trackex.app' }}" > .env
+
+      - name: Install dependencies
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          retry_on: error
+          command: cd Desktop/trackex-agent && rm -rf node_modules package-lock.json && npm install --include=optional
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version ^2.0.0 --locked
+
+      - name: Import Code Signing Certificate
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+        run: |
+          # Decode certificate
+          echo $MACOS_CERTIFICATE | base64 --decode > certificate.p12
+          
+          # Create keychain with proper settings
+          security create-keychain -p actions temp.keychain
+          security set-keychain-settings -lut 21600 temp.keychain
+          security default-keychain -s temp.keychain
+          security unlock-keychain -p actions temp.keychain
+          
+          # Import certificate with access rights
+          security import certificate.p12 \
+            -k temp.keychain \
+            -P $MACOS_CERTIFICATE_PWD \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+          
+          # Allow codesign to access keychain without prompting
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k actions temp.keychain
+          
+          # Keep keychain unlocked
+          security unlock-keychain -p actions temp.keychain
+          
+          # Clean up
+          rm certificate.p12
+          
+      - name: List codesigning identities
+        run: security find-identity -v -p codesigning
+
+      - name: Prepare keychain for build
+        run: |
+          # Ensure keychain is unlocked and accessible
+          security unlock-keychain -p actions temp.keychain
+          security set-keychain-settings -lut 21600 temp.keychain
+          
+          # Verify identity is accessible
+          security find-identity -v -p codesigning temp.keychain
+
+      - name: Build Tauri app (MacOS)
+        working-directory: Desktop/trackex-agent
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          CI: true
+        run: |
+          echo "Building TrackEx Agent for macOS (Universal Binary)..."
+          cargo tauri build --verbose --target universal-apple-darwin
+          
+      - name: Notarize app bundle
+        working-directory: Desktop/trackex-agent
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          APP_PATH="src-tauri/target/release/bundle/macos/TrackEx Agent.app"
+          
+          if [ ! -d "$APP_PATH" ]; then
+            echo "Error: App bundle not found at $APP_PATH"
+            exit 1
+          fi
+          
+          echo "Creating zip for notarization..."
+          ditto -c -k --keepParent "$APP_PATH" "TrackEx-Agent.zip"
+          
+          echo "Submitting app for notarization..."
+          xcrun notarytool submit "TrackEx-Agent.zip" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait \
+            --timeout 30m || {
+              echo "Warning: Notarization failed or timed out. App will still be signed but may show warnings."
+              exit 0
+            }
+          
+          echo "Stapling notarization ticket..."
+          xcrun stapler staple "$APP_PATH" || {
+            echo "Warning: Stapling failed. App is notarized but ticket not attached."
+            exit 0
+          }
+          
+          echo "Notarization complete!"
+
+      - name: Verify code signature and stapling
+        working-directory: Desktop/trackex-agent
+        run: |
+          APP_PATH="src-tauri/target/release/bundle/macos/TrackEx Agent.app"
+          DMG_PATH="src-tauri/target/release/bundle/dmg/TrackEx Agent_"*".dmg"
+          
+          echo "=== Verifying .app bundle signature ==="
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH" || {
+            echo "Warning: Code signature verification failed"
+          }
+          
+          echo ""
+          echo "=== Checking signature details ==="
+          codesign -dvv "$APP_PATH" 2>&1 || true
+          
+          echo ""
+          echo "=== Checking Gatekeeper assessment ==="
+          spctl --assess --type execute --verbose "$APP_PATH" 2>&1 || {
+            echo "Note: Gatekeeper assessment failed - this is expected if notarization didn't complete"
+          }
+          
+          echo ""
+          echo "=== Verifying stapling on .app ==="
+          xcrun stapler validate "$APP_PATH" 2>&1 || {
+            echo "Note: Stapling validation failed - app may show security warnings on first launch"
+          }
+          
+          echo ""
+          echo "=== Verifying DMG signature ==="
+          if ls $DMG_PATH 1> /dev/null 2>&1; then
+            codesign --verify --verbose=2 $DMG_PATH || echo "DMG signature check failed"
+            echo ""
+            echo "=== Verifying stapling on DMG ==="
+            xcrun stapler validate $DMG_PATH || echo "DMG stapling check failed"
+          else
+            echo "No DMG found to verify"
+          fi
+          
+          echo ""
+          echo "Build verification complete"
+          
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: TrackEx-Agent-macos
+          path: |
+            Desktop/trackex-agent/src-tauri/target/release/bundle/dmg/TrackEx Agent_*.dmg
+            Desktop/trackex-agent/src-tauri/target/release/bundle/dmg/TrackEx Agent_*.dmg.sig
+            Desktop/trackex-agent/src-tauri/target/release/bundle/macos/TrackEx Agent.app.tar.gz
+            Desktop/trackex-agent/src-tauri/target/release/bundle/macos/TrackEx Agent.app.tar.gz.sig
+          if-no-files-found: warn

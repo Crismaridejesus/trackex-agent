@@ -1,0 +1,297 @@
+/* Update Dialog Styles */
+
+.update-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.update-dialog {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 24px;
+  width: 340px;
+  max-width: 90vw;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+  border: 1px solid #e5e5e7;
+  animation: dialogSlideIn 0.2s ease-out;
+}
+
+@keyframes dialogSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.update-dialog-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.update-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #007aff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: white;
+  font-weight: bold;
+}
+
+.update-icon.error {
+  background: #ff3b30;
+}
+
+.update-dialog-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.update-dialog-body {
+  margin-bottom: 20px;
+}
+
+.update-dialog-body p {
+  color: #666666;
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0 0 12px 0;
+}
+
+.update-version-info {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 16px;
+  background: #f5f5f7;
+  border-radius: 12px;
+  margin-bottom: 16px;
+}
+
+.version-current {
+  color: #86868b;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 14px;
+}
+
+.version-arrow {
+  color: #86868b;
+  font-size: 18px;
+}
+
+.version-new {
+  color: #34c759;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.update-notes {
+  background: #f5f5f7;
+  border-radius: 8px;
+  padding: 12px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.update-notes h3 {
+  font-size: 12px;
+  font-weight: 600;
+  color: #86868b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0 0 8px 0;
+}
+
+.notes-content {
+  color: #1a1a1a;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.update-progress {
+  height: 8px;
+  background: #e5e5e7;
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 12px 0;
+}
+
+.update-progress-bar {
+  height: 100%;
+  background: #007aff;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.update-progress-text {
+  text-align: center;
+  font-size: 13px;
+  color: #666666;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.update-note {
+  text-align: center;
+  font-size: 12px;
+  color: #86868b;
+  font-style: italic;
+}
+
+.error-message {
+  color: #d32f2f !important;
+  background: rgba(255, 59, 48, 0.1);
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.update-dialog-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.update-btn {
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+}
+
+.update-btn.primary {
+  background: #ff6b35;
+  color: white;
+}
+
+.update-btn.primary:hover {
+  background: #ff8555;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(255, 107, 53, 0.3);
+}
+
+.update-btn.secondary {
+  background: transparent;
+  color: #007aff;
+  border: none;
+}
+
+.update-btn.secondary:hover {
+  color: #0051d5;
+  text-decoration: underline;
+}
+
+/* Small checking indicator */
+.update-checking {
+  position: fixed;
+  bottom: 16px;
+  left: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #ffffff;
+  border: 1px solid #e5e5e7;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #666666;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  z-index: 100;
+}
+
+.update-spinner-small {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #e5e5e7;
+  border-top-color: #007aff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Scrollbar styling for release notes */
+.update-notes::-webkit-scrollbar {
+  width: 6px;
+}
+
+.update-notes::-webkit-scrollbar-track {
+  background: #f5f5f7;
+  border-radius: 3px;
+}
+
+.update-notes::-webkit-scrollbar-thumb {
+  background: #d2d2d7;
+  border-radius: 3px;
+}
+
+.update-notes::-webkit-scrollbar-thumb:hover {
+  background: #b3b3b8;
+}
+
+/* Mandatory Update Styles */
+.update-dialog-overlay.mandatory {
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+}
+
+.update-dialog-overlay.mandatory .update-dialog {
+  border: 2px solid #ff9500;
+  box-shadow: 0 8px 32px rgba(255, 149, 0, 0.2);
+}
+
+.mandatory-banner {
+  background: linear-gradient(135deg, #ff9500 0%, #ff6b00 100%);
+  color: white;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.update-dialog-overlay.mandatory .update-dialog-header .update-icon {
+  background: #ff9500;
+  font-size: 16px;
+}
+
+.update-dialog-overlay.mandatory .update-btn.primary {
+  background: linear-gradient(135deg, #ff9500 0%, #ff6b00 100%);
+  box-shadow: 0 4px 12px rgba(255, 149, 0, 0.3);
+}
+
+.update-dialog-overlay.mandatory .update-btn.primary:hover {
+  background: linear-gradient(135deg, #e68600 0%, #e65c00 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(255, 149, 0, 0.4);
+}

@@ -1,0 +1,546 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+
+generator client {
+  provider = "prisma-client-js"
+  binaryTargets = ["native", "windows"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ================================
+// MULTI-TENANT ORGANIZATION MODELS
+// ================================
+
+// Organization (Tenant) - Companies using the platform
+model Organization {
+  id               String   @id @default(cuid())
+  name             String
+  slug             String   @unique // URL-friendly identifier
+  email            String   @unique // Primary contact email
+  billingEmail     String?  @map("billing_email")
+  companySize      String?  @map("company_size") // "1-10", "11-50", "51-200", "201-500", "500+"
+  industry         String?
+  timezone         String?  @default("UTC") // Default timezone for the organization
+  isBetaTester       Boolean  @default(false) @map("is_beta_tester") // Bypass payment for testing
+  bypassPayment      Boolean  @default(false) @map("bypass_payment") // Super Admin override
+  stripeCustomerId   String?  @unique @map("stripe_customer_id") // Stripe payment customer ID
+  
+  // Trial fields
+  trialStartedAt     DateTime? @map("trial_started_at") // When trial began
+  trialEndsAt        DateTime? @map("trial_ends_at") // When trial expires (7 days from start)
+  trialConvertedAt   DateTime? @map("trial_converted_at") // When converted to paid
+  
+  isActive           Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  users        OrganizationUser[]
+  employees    Employee[]
+  teams        Team[]
+  policies     Policy[]
+  appRules     AppRule[]
+  domainRules  DomainRule[]
+  licenses     License[]
+  subscription Subscription?
+  auditLogs    AuditLog[]
+
+  @@index([slug])
+  @@index([email])
+  @@index([stripeCustomerId])
+  @@index([isActive])
+  @@index([trialEndsAt])
+  @@map("organizations")
+}
+
+// User-Organization Junction Table (RBAC)
+// Supports multi-organization membership with different roles per org
+model OrganizationUser {
+  id             String   @id @default(cuid())
+  userId         String   @map("user_id")
+  organizationId String   @map("organization_id")
+  role           String   // OWNER, MANAGER, TEAM_LEAD
+  teamIds        String[] @map("team_ids") // For TEAM_LEAD scope - which teams they can manage
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([userId])
+  @@index([organizationId])
+  @@index([role])
+  @@map("organization_users")
+}
+
+// Per-Employee License
+// Tracks license status for each employee (required for agent access)
+model License {
+  id                       String    @id @default(cuid())
+  organizationId           String    @map("organization_id")
+  employeeId               String    @unique @map("employee_id")
+  status                     String    @default("PENDING") // ACTIVE, INACTIVE, EXPIRED, PENDING
+  source                     String    @default("PENDING") // STRIPE, MANUAL, BETA_BYPASS, TRIAL, PENDING
+  tier                       String    @default("STARTER") // STARTER, TEAM - license tier purchased
+  includesAutoScreenshots    Boolean   @default(false) @map("includes_auto_screenshots") // Per-license add-on
+  activatedAt                DateTime? @map("activated_at")
+  expiresAt                  DateTime? @map("expires_at")
+  deactivatedAt              DateTime? @map("deactivated_at")
+  stripeSubscriptionItemId   String?   @map("stripe_subscription_item_id") // Stripe subscription item ID
+  notes                      String?   // Admin notes about the license
+  createdAt                DateTime  @default(now()) @map("created_at")
+  updatedAt                DateTime  @updatedAt @map("updated_at")
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employee     Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([source])
+  @@index([organizationId, status])
+  @@map("licenses")
+}
+
+// Stripe Subscription (Organization-level)
+// One subscription per organization with per-seat billing
+model Subscription {
+  id                     String   @id @default(cuid())
+  organizationId         String   @unique @map("organization_id")
+  stripeSubscriptionId   String   @unique @map("stripe_subscription_id") // Stripe subscription ID
+  stripePriceId          String?  @map("stripe_price_id") // Stripe price ID
+  tier                   String   @default("TEAM") // STARTER, TEAM (simplified from tiered pricing)
+  billingCycle           String   @default("MONTHLY") @map("billing_cycle") // MONTHLY, ANNUAL
+  status                 String   // active, past_due, canceled, trialing, incomplete, etc.
+  currentPeriodStart     DateTime @map("current_period_start")
+  currentPeriodEnd       DateTime @map("current_period_end")
+  cancelAtPeriodEnd      Boolean  @default(false) @map("cancel_at_period_end")
+  canceledAt             DateTime? @map("canceled_at")
+  trialStart             DateTime? @map("trial_start")
+  trialEnd               DateTime? @map("trial_end")
+  quantity               Int      @default(0) // Number of licensed seats
+  pricePerLicense        Int      @default(0) @map("price_per_license") // cents per month
+  discountPercent        Int      @default(0) @map("discount_percent") // Volume discount percentage
+  dataRetentionDays      Int      @default(90) @map("data_retention_days") // Data retention based on tier
+  gracePeriodDays        Int      @default(7) @map("grace_period_days")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  addOns       SubscriptionAddOn[]
+
+  @@index([stripeSubscriptionId])
+  @@index([status])
+  @@index([tier])
+  @@map("subscriptions")
+}
+
+// Add-on Definition
+// Available add-ons that can be purchased per-license or org-wide
+model AddOn {
+  id                 String   @id @default(cuid())
+  code               String   @unique // AUTO_SCREENSHOTS (primary add-on for $1.50/seat/month)
+  name               String   // Display name
+  description        String?
+  monthlyPriceCents  Int      @map("monthly_price_cents") // Price per license per month in cents
+  pricingType        String   @default("PER_LICENSE") @map("pricing_type") // PER_LICENSE, FIXED (org-wide)
+  stripePriceId      String?  @map("stripe_price_id") // Stripe price ID for this add-on
+  isActive           Boolean  @default(true) @map("is_active")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  subscriptionAddOns SubscriptionAddOn[]
+
+  @@index([code])
+  @@index([isActive])
+  @@map("add_ons")
+}
+
+// Subscription Add-on (Organization-level add-on)
+// Links add-ons to subscriptions for org-wide pricing
+model SubscriptionAddOn {
+  id                       String   @id @default(cuid())
+  subscriptionId           String   @map("subscription_id")
+  addOnId                  String   @map("add_on_id")
+  quantity                 Int      @default(1) // For per-license add-ons, matches seat count
+  stripeSubscriptionItemId String?  @map("stripe_subscription_item_id")
+  status                   String   @default("ACTIVE") // ACTIVE, CANCELED
+  enabledAt                DateTime @default(now()) @map("enabled_at")
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @updatedAt @map("updated_at")
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  addOn        AddOn        @relation(fields: [addOnId], references: [id], onDelete: Cascade)
+
+  @@unique([subscriptionId, addOnId])
+  @@index([subscriptionId])
+  @@index([addOnId])
+  @@map("subscription_add_ons")
+}
+
+// ================================
+// USER & AUTHENTICATION MODELS
+// ================================
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique @map("email")
+  name      String?
+  password  String?  // Bcrypt hashed password
+  role      String   @default("USER") // SUPER_ADMIN or USER (org roles are in OrganizationUser)
+  isActive  Boolean  @default(true) @map("is_active")
+  emailVerified DateTime? @map("email_verified")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organizations OrganizationUser[] // Multi-org membership
+
+  @@index([email])
+  @@index([isActive])
+  @@index([role])
+  @@map("users")
+}
+
+// ================================
+// EMPLOYEE & MONITORING MODELS
+// ================================
+
+model Employee {
+  id                 String   @id @default(cuid())
+  organizationId     String   @map("organization_id")
+  name               String
+  email              String
+  password           String?  // For desktop app login
+  teamId             String?  @map("team_id")
+  policyId           String?  @map("policy_id")
+  isActive           Boolean  @default(true) @map("is_active")
+  autoScreenshots    Boolean  @default(false) @map("auto_screenshots")
+  screenshotInterval Int?     @map("screenshot_interval") // minutes
+  timezone           String?  // IANA timezone identifier, e.g., "America/New_York"
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team?         @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  policy       Policy?       @relation(fields: [policyId], references: [id], onDelete: SetNull)
+  devices      Device[]
+  sessions     WorkSession[]
+  events       Event[]
+  screenshots  Screenshot[]
+  jobs         Job[]
+  appUsage     AppUsage[]
+  license      License?
+
+  @@unique([organizationId, email]) // Email unique within organization
+  @@index([organizationId])
+  @@index([email])
+  @@index([teamId])
+  @@index([isActive])
+  @@index([organizationId, isActive])
+  @@index([teamId, isActive]) // For live view team filtering
+  @@map("employees")
+}
+
+model Team {
+  id              String   @id @default(cuid())
+  organizationId  String   @map("organization_id")
+  name            String
+  defaultPolicyId String?  @map("default_policy_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  defaultPolicy Policy?      @relation(fields: [defaultPolicyId], references: [id], onDelete: SetNull)
+  employees     Employee[]
+
+  @@unique([organizationId, name]) // Team name unique within organization
+  @@index([organizationId])
+  @@map("teams")
+}
+
+model Policy {
+  id                 String   @id @default(cuid())
+  organizationId     String   @map("organization_id")
+  name               String
+  idleThresholdS     Int      @default(120) @map("idle_threshold_s") // 2 minutes (120 seconds)
+  countIdleAsWork    Boolean  @default(false) @map("count_idle_as_work")
+  autoScreenshots    Boolean  @default(false) @map("auto_screenshots")
+  screenshotInterval Int?     @map("screenshot_interval") // minutes, null = use default
+  redactTitles       Boolean  @default(false) @map("redact_titles")
+  browserDomainOnly  Boolean  @default(true) @map("browser_domain_only")
+  workHours          String?  @map("work_hours") // JSON config as string
+  isDefault          Boolean  @default(false) @map("is_default") // Default policy for new teams
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employees    Employee[]
+  teamsDefault Team[]
+
+  @@unique([organizationId, name]) // Policy name unique within organization
+  @@index([organizationId])
+  @@index([organizationId, isDefault])
+  @@map("policies")
+}
+
+model AppRule {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  matcherType    String   @map("matcher_type") // EXACT, GLOB, REGEX
+  value          String
+  category       String   // PRODUCTIVE, NEUTRAL, UNPRODUCTIVE
+  priority       Int      @default(100)
+  isActive       Boolean  @default(true) @map("is_active")
+  isGlobal       Boolean  @default(false) @map("is_global") // Super Admin created, applies to all orgs
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([priority, isActive])
+  @@index([isGlobal, isActive])
+  @@map("app_rules")
+}
+
+// Domain-level productivity rules (higher priority than app rules)
+// Used to classify browser activity by domain
+model DomainRule {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  domain         String   // Domain pattern (e.g., "youtube.com", "*.facebook.com")
+  matcherType    String   @default("SUFFIX") @map("matcher_type") // EXACT, SUFFIX, CONTAINS
+  category       String   // PRODUCTIVE, NEUTRAL, UNPRODUCTIVE
+  description    String?  // Optional description (e.g., "Social media")
+  priority       Int      @default(100)
+  isActive       Boolean  @default(true) @map("is_active")
+  isGlobal       Boolean  @default(false) @map("is_global") // Super Admin created, applies to all orgs
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, domain, matcherType])
+  @@index([organizationId])
+  @@index([priority, isActive])
+  @@index([domain])
+  @@index([isGlobal, isActive])
+  @@map("domain_rules")
+}
+
+model Device {
+  id         String    @id @default(cuid())
+  employeeId String    @map("employee_id")
+  platform   String    // "macos", "windows", "linux"
+  deviceName String    @map("device_name")
+  deviceUuid String?   @map("device_uuid") // Stable UUID from desktop agent for device matching
+  version    String?   // OS version
+  lastSeen   DateTime? @map("last_seen")
+  isActive   Boolean   @default(true) @map("is_active")
+  currentApp String?   @map("current_app") // JSON string with current app data
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  employee    Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  tokens      DeviceToken[]
+  events      Event[]
+  sessions    WorkSession[]
+  screenshots Screenshot[]
+  jobs        Job[]
+  appUsage    AppUsage[]
+
+  @@index([employeeId])
+  @@index([isActive])
+  @@index([lastSeen, isActive, employeeId]) // For live view online presence queries
+  @@index([employeeId, lastSeen]) // For per-employee presence lookups
+  @@index([employeeId, deviceUuid]) // For UUID-based device matching
+  @@map("devices")
+}
+
+model DeviceToken {
+  id        String    @id @default(cuid())
+  deviceId  String    @map("device_id")
+  tokenHash String    @unique @map("token_hash")
+  lastUsed  DateTime? @map("last_used")
+  isActive  Boolean   @default(true) @map("is_active")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([tokenHash, isActive])
+  @@map("device_tokens")
+}
+
+model WorkSession {
+  id         String    @id @default(cuid())
+  employeeId String    @map("employee_id")
+  deviceId   String    @map("device_id")
+  clockIn    DateTime  @map("clock_in")
+  clockOut   DateTime? @map("clock_out")
+  totalWork  Int?      @map("total_work") // seconds
+  activeTime Int?      @map("active_time") // seconds
+  idleTime   Int?      @map("idle_time") // seconds
+  editReason String?   @map("edit_reason")
+  editedBy   String?   @map("edited_by")
+  editedAt   DateTime? @map("edited_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  device   Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, clockIn])
+  @@index([clockIn, clockOut])
+  @@index([employeeId, deviceId, clockOut, clockIn])
+  @@index([clockOut, clockIn, employeeId]) // For live view finished sessions queries
+  @@map("work_sessions")
+}
+
+model Event {
+  id         String   @id @default(cuid())
+  employeeId String   @map("employee_id")
+  deviceId   String   @map("device_id")
+  type       String   // clock_in, clock_out, app_focus, idle_start, idle_end, screenshot_taken
+  timestamp  DateTime
+  data       String?  // event-specific data as JSON string
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  device   Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, timestamp])
+  @@index([type, timestamp])
+  @@map("events")
+}
+
+model Screenshot {
+  id            String   @id @default(cuid())
+  employeeId    String   @map("employee_id")
+  deviceId      String   @map("device_id")
+
+  // Cloudinary fields (required)
+  cloudinaryPublicId  String  @map("cloudinary_public_id")
+  cloudinaryUrl       String  @map("cloudinary_url")
+  width               Int
+  height              Int
+  format              String
+  bytes               Int
+
+  isAuto        Boolean  @default(false) @map("is_auto")
+  isRedacted    Boolean  @default(false) @map("is_redacted")
+  viewCount     Int      @default(0) @map("view_count")
+  takenAt       DateTime @map("taken_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  device   Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, takenAt])
+  @@index([cloudinaryPublicId])
+  @@map("screenshots")
+}
+
+model Job {
+  id          String    @id @default(cuid())
+  employeeId  String    @map("employee_id")
+  deviceId    String    @map("device_id")
+  type        String    // 'screenshot', 'app_focus', etc.
+  status      String    @default("pending") // 'pending', 'in_progress', 'completed', 'failed'
+  data        String?   // JSON data for the job
+  result      String?   // JSON result from the job
+  createdAt   DateTime  @default(now()) @map("created_at")
+  startedAt   DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  device   Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([deviceId])
+  @@index([status])
+  @@index([type])
+  @@map("jobs")
+}
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  action         String   // policy_change, app_rule_change, employee_add, license_activate, etc.
+  actorId        String?  @map("actor_id") // User ID, Employee ID, or null for system actions
+  actorType      String?  @map("actor_type") // "user", "employee", "system", or null
+  targetType     String?  @map("target_type") // Employee, Policy, License, Subscription, etc.
+  targetId       String?  @map("target_id")
+  details        String?  // action-specific data as JSON string
+  ipAddress      String?  @map("ip_address")
+  userAgent      String?  @map("user_agent")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([action, createdAt])
+  @@index([actorId, createdAt])
+  @@index([organizationId, action, createdAt])
+  @@map("audit_logs")
+}
+
+model AppUsage {
+  id          String    @id @default(cuid())
+  employeeId  String    @map("employee_id")
+  deviceId    String    @map("device_id")
+  appName     String    @map("app_name")
+  appId       String?   @map("app_id")
+  windowTitle String?   @map("window_title")
+  url         String?   // Full URL or domain-only based on browserDomainOnly policy
+  domain      String?   // Always the domain (e.g., "github.com")
+  category    String    @default("NEUTRAL") // PRODUCTIVE, NEUTRAL, UNPRODUCTIVE
+  startTime   DateTime  @map("start_time")
+  endTime     DateTime? @map("end_time")
+  duration    Int       // seconds
+  isIdle      Boolean   @default(false) @map("is_idle")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  device   Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, startTime])
+  @@index([deviceId, startTime])
+  @@index([employeeId, deviceId, startTime])
+  @@index([employeeId, deviceId, isIdle, startTime])
+  @@index([employeeId, deviceId, endTime, startTime])
+  @@index([appName])
+  @@index([category])
+  @@index([domain])
+  @@index([startTime, endTime, isIdle, employeeId]) // For live view today's aggregates
+  @@map("app_usage")
+}
+
+// Agent auto-update version management
+// Stores information about available desktop agent versions for the Tauri updater
+model AgentVersion {
+  id           String   @id @default(cuid())
+  version      String   // Semantic version (e.g., "1.0.4")
+  platform     String   // "darwin" or "windows"
+  arch         String   // "aarch64", "x86_64"
+  downloadUrl  String   @map("download_url") // URL to the update package
+  signature    String   // Required for Tauri signature verification
+  releaseNotes String   @map("release_notes") // Markdown release notes
+  releasedAt   DateTime @default(now()) @map("released_at")
+  isActive     Boolean  @default(true) @map("is_active") // Whether this version is available
+  mandatory    Boolean  @default(false) // If true, users must update
+  fileSize     Int?     @map("file_size") // Size in bytes
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@unique([version, platform, arch])
+  @@index([platform, arch, isActive])
+  @@index([releasedAt])
+  @@map("agent_versions")
+}
