@@ -1,624 +1,346 @@
-# TrackEx - Time Tracking & Productivity Monitoring
+# TrackEx Agent
 
-A modern time tracking and productivity monitoring solution for remote teams, featuring a web dashboard and cross-platform desktop agent.
+A secure, privacy-focused desktop agent for employee time tracking and productivity monitoring.
 
-## 🎯 Overview
+## Overview
 
-TrackEx provides complete visibility into remote team productivity through:
+TrackEx Agent is a cross-platform desktop application built with Tauri (Rust + React) that provides:
 
-- Real-time activity monitoring and analytics
-- Automated time tracking with idle detection
-- Privacy-respecting screenshot capture
-- Customizable tracking policies per team/employee
-- App usage categorization (productive/neutral/unproductive)
+- **Time Tracking**: Clock in/out functionality with session management
+- **Application Monitoring**: Track which applications are used during work hours
+- **Idle Detection**: Automatically detect when users are away from their computers
+- **Screenshots**: Policy-driven screen capture for work verification
+- **Privacy Controls**: Domain-only mode for browsers, title redaction, and pause controls
 
-## 📋 Prerequisites
+## Installation
 
-- **Node.js** 18.17+ (recommended: 24.6.0+)
-- **PostgreSQL** database (or [Neon](https://neon.tech) serverless)
-- **npm** or **yarn**
-- Optional: **Redis** for enhanced real-time features
+### System Requirements
 
-## 🛠 Technology Stack
+- **macOS**: 12.6 or later (Intel or Apple Silicon)
+- **Windows**: Windows 10/11 (64-bit)
+- **Linux**: Ubuntu 20.04+ or equivalent
+- 150MB RAM
+- 100MB disk space
+- Network connection to TrackEx server
 
-### Web Application
+### Install from Package
 
-- Next.js 14 (App Router)
-- React 18 + TypeScript
-- Prisma ORM + PostgreSQL
-- NextAuth.js v5
-- TanStack Query
-- Socket.IO
-- Tailwind CSS + shadcn/ui
+1. Download `TrackEx-Agent-v1.0.0.pkg` from your organization's distribution
+2. Double-click the package to install
+3. Follow the installation prompts
+4. Launch from Applications folder or via Spotlight
 
-### Desktop Agent
+### Security & Permissions
 
-- Tauri 2.x (Rust + React)
-- Cross-platform: macOS & Windows
+TrackEx Agent requires certain macOS permissions to function:
 
-## 📁 Project Structure
+#### Required Permissions
+- **Screen Recording**: Enables screenshot capture and application monitoring
+  - Go to: System Preferences → Security & Privacy → Privacy → Screen Recording
+  - Check the box next to "TrackEx Agent"
 
-\`\`\`
-trackex/
-├── app/ # Next.js pages & API routes
-│ ├── api/ # Backend API endpoints
-│ │ ├── auth/ # Authentication
-│ │ ├── employees/ # Employee CRUD
-│ │ ├── teams/ # Team management
-│ │ ├── policies/ # Tracking policies
-│ │ ├── app-rules/ # App categorization
-│ │ ├── ingest/ # Desktop agent data ingestion
-│ │ ├── analytics/ # Reports & analytics
-│ │ └── live/ # Real-time endpoints
-│ ├── app/ # Protected dashboard
-│ │ ├── employees/ # Employee management
-│ │ ├── live/ # Live activity view
-│ │ └── settings/ # Configuration
-│ └── (marketing)/ # Public pages
-├── components/
-│ ├── ui/ # shadcn/ui components
-│ ├── app/ # Dashboard components
-│ ├── landing/ # Landing page sections
-│ └── providers/ # React context providers
-├── lib/ # Utilities & configuration
-│ ├── auth.ts # NextAuth configuration
-│ ├── db.ts # Prisma client
-│ ├── realtime/ # WebSocket/Redis
-│ └── validations/ # Zod schemas
-├── prisma/ # Database schema
-├── desktop-agent/ # Tauri desktop app
-├── hooks/ # Custom React hooks
-├── types/ # TypeScript definitions
-└── public/ # Static assets
-\`\`\`
+#### Optional Permissions
+- **Accessibility**: Enhances window title detection
+  - Go to: System Preferences → Security & Privacy → Privacy → Accessibility
+  - Check the box next to "TrackEx Agent"
 
-## ⚙️ Environment Variables
+## First-Time Setup
 
-Create a `.env` file with:
+### 1. Consent Wizard
+On first launch, you'll be guided through a consent wizard that explains:
+- What data is collected
+- How data is used
+- Your privacy controls
+- Data retention policies
 
-\`\`\`env
+You must accept the consent terms to proceed.
 
-# Database (required)
+### 2. Login
+Enter your TrackEx credentials:
+- **Server URL**: Your organization's TrackEx server (e.g., `https://trackex.yourcompany.com`)
+- **Email**: Your TrackEx account email
+- **Password**: Your TrackEx account password
 
-DATABASE_URL="postgresql://user:pass@host:5432/trackex"
+### 3. Permissions
+Grant the required macOS permissions when prompted. The app will guide you through the process.
 
-# NextAuth (required)
+## Usage
 
-NEXTAUTH_URL="http://localhost:3000"
-NEXTAUTH_SECRET="your-32-char-secret"
+### Basic Operations
 
-# Admin credentials (required)
+#### Clock In/Out
+- **Clock In**: Click "Clock In" to start a work session
+- **Clock Out**: Click "Clock Out" to end your work session
+- Only active work sessions are monitored
 
-ADMIN_EMAIL="admin@example.com"
-ADMIN_PASSWORD_HASH="$2a$12$..." # bcrypt hash
+#### Taking Breaks
+Use the pause controls to take breaks:
+- **15/30/60 minute breaks**: Temporary pause with auto-resume
+- **Manual resume**: End break early
+- **Tracking paused**: All monitoring stops during breaks
 
-# Device authentication (required)
+#### System Tray
+TrackEx Agent runs in your menu bar with these options:
+- **Show TrackEx**: Open the main application window
+- **Pause/Resume**: Quick break controls
+- **Send Diagnostics**: Report issues to support
+- **Quit**: Close the application
 
-DEVICE_TOKEN_SECRET="your-device-secret"
+### What's Monitored
 
-# Optional
+#### During Work Sessions
+- **Application Usage**: Which apps you use and for how long
+- **Activity Status**: Whether you're actively working or idle
+- **Screenshots**: Periodic or on-demand captures (policy dependent)
+- **Work Hours**: Total time worked and session duration
 
-REDIS_URL="redis://localhost:6379"
-DEFAULT_EVENTS_RETENTION_DAYS=90
-DEFAULT_SCREENSHOTS_RETENTION_DAYS=30
-\`\`\`
+#### Privacy Protections
+- **Browser Privacy**: Only domain names captured, not full URLs
+- **Title Filtering**: Sensitive window titles are redacted
+- **No Keylogging**: Keystrokes and clipboard content never monitored
+- **Work Hours Only**: No monitoring outside of active work sessions
 
-### Generate Password Hash
+## Configuration
 
-\`\`\`bash
-node -e "require('bcryptjs').hash('yourpassword', 12).then(h=>console.log(h))"
-\`\`\`
+### Environment Variables
 
-## 🚀 Installation
+For development or custom configurations:
 
-\`\`\`bash
+```bash
+# Development mode (shorter intervals for testing)
+export TRACKEX_DEV_SHORT_INTERVALS=1
 
-# Clone repository
+# Screenshot settings
+export TRACKEX_SCREENSHOT_ENABLED=true
+export TRACKEX_SCREENSHOT_INTERVAL=30  # minutes
 
-git clone https://github.com/your-org/trackex.git
-cd trackex
+# Privacy settings
+export TRACKEX_DOMAIN_ONLY=true
+export TRACKEX_TITLE_REDACTION=true
+
+# Idle detection
+export TRACKEX_IDLE_THRESHOLD=300  # seconds
+```
+
+### Policy Configuration
+
+Most settings are controlled by your organization's TrackEx policy:
+- Screenshot frequency (off/15/30/60 minutes)
+- Domain-only mode for browsers
+- Title redaction patterns
+- Idle time thresholds
+
+## Troubleshooting
+
+### Common Issues
+
+#### App Won't Start
+- Check that you're running macOS 12.6 or later
+- Verify the app is properly code-signed: `codesign -v /Applications/TrackEx\ Agent.app`
+- Check Console.app for error messages
+
+#### "App is damaged" Error
+- The app may not be properly notarized
+- Try downloading a fresh copy from your IT department
+- Contact support if the issue persists
+
+#### Screenshots Not Working
+- Verify Screen Recording permission is granted
+- Restart the app after granting permissions
+- Check that screenshots are enabled in your organization's policy
+
+#### Network Connection Issues
+- Verify the server URL is correct
+- Check firewall settings for HTTPS traffic
+- Ensure your organization's certificate is trusted
+
+#### High CPU/Memory Usage
+- Restart the application
+- Check for other monitoring software conflicts
+- Report performance issues to support
+
+### Performance Tuning
+
+#### For IT Administrators
+```bash
+# Reduce monitoring frequency (increases intervals)
+export TRACKEX_APP_FOCUS_INTERVAL=5      # seconds between app checks
+export TRACKEX_HEARTBEAT_INTERVAL=60     # seconds between heartbeats
+export TRACKEX_JOB_POLLING_INTERVAL=30   # seconds between job polls
+
+# Adjust idle threshold
+export TRACKEX_IDLE_THRESHOLD=600        # 10 minutes
+```
+
+### Logs & Diagnostics
+
+#### Log Locations
+- Application logs: `~/Library/Logs/TrackEx-Agent/`
+- Database: `~/Library/Application Support/TrackEx/agent.db`
+- Crash reports: `~/Library/Application Support/CrashReporter/TrackEx Agent_*.crash`
+
+#### Collecting Diagnostics
+1. Click "Send Diagnostics" in the system tray menu
+2. Or manually collect logs:
+   ```bash
+   # View recent logs
+   tail -f ~/Library/Logs/TrackEx-Agent/app.log
+   
+   # Check database status
+   sqlite3 ~/Library/Application\ Support/TrackEx/agent.db ".tables"
+   ```
+
+#### Privacy Note
+Diagnostic logs automatically redact sensitive information including:
+- Authentication tokens
+- Passwords
+- Personal identifiers
+- Window titles (when redaction is enabled)
+
+## Network Requirements
+
+### Firewall Configuration
+
+TrackEx Agent requires outbound HTTPS access to:
+- Your TrackEx server (configured server URL)
+- Apple's notarization services (for updates)
+
+#### Required Domains
+```
+# Your organization's TrackEx server
+your-domain.trackex.com
+
+# For auto-updates (optional)
+*.apple.com
+```
+
+#### Ports
+- **443 (HTTPS)**: All TrackEx API communication
+- **80 (HTTP)**: Redirect to HTTPS only
+
+### Corporate Proxy
+If using a corporate proxy, ensure it supports:
+- TLS 1.2 or later
+- Certificate transparency
+- WebSocket connections (for real-time features)
+
+## Privacy & Security
+
+### Data Collection
+TrackEx Agent collects only work-related data during active sessions:
+- Application names and usage duration
+- Work session start/end times
+- Activity vs. idle status
+- Optional screenshots (policy dependent)
+
+### Data NOT Collected
+- Keystrokes or clipboard content
+- File contents or document data
+- Personal applications outside work hours
+- Network traffic or browsing history
+- Location data or device identifiers
+
+### Security Measures
+- **Encryption**: All data transmitted via HTTPS
+- **Secure Storage**: Credentials stored in macOS Keychain
+- **Code Signing**: App signed with Apple Developer ID
+- **Notarization**: Verified by Apple for security
+- **Hardened Runtime**: Enhanced security protections
+
+### Data Retention
+- Local data retained for 7 days maximum
+- Server retention per your organization's policy
+- Request data deletion through your system administrator
+
+## Development
+
+### Building from Source
+
+#### Prerequisites
+```bash
+# Install Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Install Node.js 20+
+nvm install 20
+nvm use 20
 
 # Install dependencies
-
 npm install
+```
 
-# Configure environment
+#### Build Commands
+```bash
+# Development mode (auto-reload)
+npm run tauri dev
 
-cp .env.example .env
-
-# Edit .env with your values
-
-# Run database migrations
-
-npx prisma migrate dev
-
-# Generate Prisma client
-
-npx prisma generate
-\`\`\`
-
-## 💻 Development
-
-\`\`\`bash
-
-# Start development server
-
-npm run dev
-
-# With network access (for testing from other devices)
-
-npm run dev:server
-
-# Run type checking
-
-npm run typecheck
-
-# Run linting
-
-npm run lint
-
-# Run tests
-
-npm run test
-\`\`\`
-
-Open [http://localhost:3000](http://localhost:3000)
-
-## 🏗️ Production Build
-
-\`\`\`bash
-
-# Build for production
-
-npm run build
-
-# Start production server
-
-npm start
-
-# Or with network access
-
-npm run start:server
-\`\`\`
-
-## 📦 Deployment
-
-### Hetzner (Pre-configured)
-
-\`\`\`bash
-
-# Full deployment
-
-./deploy-to-hetzner.sh
-
-# Quick update
-
-./deploy-update.sh
-\`\`\`
-
-### Vercel
-
-1. Connect GitHub repository
-2. Add environment variables in Vercel dashboard
-3. Deploy
-
-### Docker
-
-\`\`\`bash
-docker build -t trackex .
-docker run -p 3000:3000 --env-file .env trackex
-\`\`\`
-
-## 🖥 Desktop Agent
-
-### Build Requirements
-
-- **macOS**: Xcode CLI Tools, macOS 10.15+
-- **Windows**: Visual Studio 2022 C++ tools, Windows 10 1809+
-- **Both**: Node.js 24.6.0+, Rust 1.89.0+
-
-### Build
-
-\`\`\`bash
-cd desktop-agent/trackex-agent
-npm install
+# Production build (current platform only)
 npm run tauri build
-\`\`\`
 
-### Output
+# Platform-specific builds:
+# - On macOS: Creates .dmg and .app
+# - On Windows: Creates .msi and .exe installers
+# - On Linux: Creates .deb and .AppImage
 
-- macOS: `.dmg` and `.app`
-- Windows: `.msi` and `.exe`
+# Production scripts (macOS)
+./scripts/build-production.sh    # Build
+./scripts/codesign-production.sh # Code sign
+./scripts/notarize-production.sh # Notarize with Apple
+```
 
-## 📜 Available Scripts
+#### Cross-Platform Builds with GitHub Actions
 
-| Script                   | Description              |
-| ------------------------ | ------------------------ |
-| `npm run dev`            | Start development server |
-| `npm run build`          | Build production bundle  |
-| `npm start`              | Start production server  |
-| `npm run lint`           | Run ESLint               |
-| `npm run typecheck`      | TypeScript type checking |
-| `npm run test`           | Run unit tests           |
-| `npm run e2e`            | Run E2E tests            |
-| `npm run prisma:migrate` | Run database migrations  |
-| `npm run deploy`         | Deploy to Hetzner        |
-| `npm run deploy:update`  | Quick deploy update      |
+For building on all platforms simultaneously:
 
-## 🗄 Database Models
+1. **Set up repository secrets** (for code signing):
+   - `TAURI_PRIVATE_KEY`: Your Tauri updater private key
+   - `TAURI_KEY_PASSWORD`: Password for the private key
 
-| Model           | Purpose                    |
-| --------------- | -------------------------- |
-| **User**        | Admin accounts             |
-| **Employee**    | Team members being tracked |
-| **Team**        | Organizational groups      |
-| **Policy**      | Tracking configuration     |
-| **AppRule**     | App categorization rules   |
-| **Device**      | Employee devices           |
-| **WorkSession** | Clock in/out records       |
-| **Event**       | Activity events            |
-| **Screenshot**  | Screen captures            |
-| **AppUsage**    | App usage tracking         |
-| **AuditLog**    | Admin action logging       |
+2. **Trigger builds**:
+   - Push to `main` branch: Builds all platforms, uploads artifacts
+   - Create tag `v*` (e.g., `v1.0.2`): Creates GitHub release with installers
 
-## 🔒 Authentication
+3. **Download builds**:
+   - Go to Actions tab in GitHub
+   - Select the workflow run
+   - Download artifacts for macOS, Windows, or Linux
 
-- **Admin**: NextAuth.js with credentials provider
-- **Devices**: Token-based authentication via `DEVICE_TOKEN_SECRET`
-- **Sessions**: JWT-based, 24-hour expiry
-
-## 📡 Real-time Features
-
-- Socket.IO for WebSocket connections
-- Redis for scalable pub/sub (optional)
-- In-memory fallback when Redis unavailable
-- Live employee status and activity updates
-
-## 🔗 API Endpoints
-
-| Endpoint                | Method         | Description           |
-| ----------------------- | -------------- | --------------------- |
-| `/api/auth/*`           | Various        | Authentication        |
-| `/api/employees`        | GET/POST       | List/create employees |
-| `/api/employees/[id]`   | GET/PUT/DELETE | Employee CRUD         |
-| `/api/teams`            | GET/POST       | Team management       |
-| `/api/policies`         | GET/POST       | Policy configuration  |
-| `/api/app-rules`        | GET/POST       | App categorization    |
-| `/api/ingest/events`    | POST           | Desktop agent events  |
-| `/api/ingest/heartbeat` | POST           | Device heartbeats     |
-| `/api/analytics/*`      | GET            | Analytics data        |
-| `/api/live/*`           | GET            | Real-time status      |
-| `/api/screenshots/*`    | GET            | Screenshot retrieval  |
-
-## 📄 License
-
-Proprietary - All rights reserved
-
-## 🆘 Support
-
-For support, contact: support@trackex.app
-\`\`\`
-
----
-
-## 7. Additional Context
-
-### Further Considerations
-
-1. **Environment Setup**: Do you need help setting up the PostgreSQL database or Neon account? I can provide specific instructions for either option.
+See [.github/workflows/build-release.yml](.github/workflows/build-release.yml) for configuration.
 
-2. **Desktop Agent Development**: Are you planning to modify the Tauri desktop agent? That requires additional Rust toolchain setup.
+#### Testing
+```bash
+# Rust tests
+cd src-tauri && cargo test
 
-3. **Redis Configuration**: For production with multiple users, Redis is recommended for real-time features. Should I include Redis setup instructions?# TrackEx - Time Tracking & Productivity Monitoring
+# Manual testing
+# See tests/manual_qa_checklist.md
+```
 
-A modern time tracking and productivity monitoring solution for remote teams, featuring a web dashboard and cross-platform desktop agent.
+## Support
 
-## 🎯 Overview
+### Getting Help
+1. Check this README for common solutions
+2. Review the manual QA checklist for known issues
+3. Contact your IT department or system administrator
+4. For critical issues, use "Send Diagnostics" in the app
 
-TrackEx provides complete visibility into remote team productivity through:
+### Reporting Issues
+When reporting issues, include:
+- Operating system and version (macOS/Windows/Linux)
+- TrackEx Agent version
+- Steps to reproduce the issue
+- Relevant log excerpts (redacted)
+- Screenshot if applicable
 
-- Real-time activity monitoring and analytics
-- Automated time tracking with idle detection
-- Privacy-respecting screenshot capture
-- Customizable tracking policies per team/employee
-- App usage categorization (productive/neutral/unproductive)
+### Enterprise Support
+For enterprise customers:
+- Dedicated support portal
+- Priority response times
+- Custom configuration assistance
+- Deployment automation support
 
-## 📋 Prerequisites
+## License
 
-- **Node.js** 18.17+ (recommended: 24.6.0+)
-- **PostgreSQL** database (or [Neon](https://neon.tech) serverless)
-- **npm** or **yarn**
-- Optional: **Redis** for enhanced real-time features
+Copyright (c) 2024 TrackEx. All rights reserved.
 
-## 🛠 Technology Stack
-
-### Web Application
-
-- Next.js 14 (App Router)
-- React 18 + TypeScript
-- Prisma ORM + PostgreSQL
-- NextAuth.js v5
-- TanStack Query
-- Socket.IO
-- Tailwind CSS + shadcn/ui
-
-### Desktop Agent
-
-- Tauri 2.x (Rust + React)
-- Cross-platform: macOS & Windows
-
-## 📁 Project Structure
-
-\`\`\`
-trackex/
-├── app/ # Next.js pages & API routes
-│ ├── api/ # Backend API endpoints
-│ │ ├── auth/ # Authentication
-│ │ ├── employees/ # Employee CRUD
-│ │ ├── teams/ # Team management
-│ │ ├── policies/ # Tracking policies
-│ │ ├── app-rules/ # App categorization
-│ │ ├── ingest/ # Desktop agent data ingestion
-│ │ ├── analytics/ # Reports & analytics
-│ │ └── live/ # Real-time endpoints
-│ ├── app/ # Protected dashboard
-│ │ ├── employees/ # Employee management
-│ │ ├── live/ # Live activity view
-│ │ └── settings/ # Configuration
-│ └── (marketing)/ # Public pages
-├── components/
-│ ├── ui/ # shadcn/ui components
-│ ├── app/ # Dashboard components
-│ ├── landing/ # Landing page sections
-│ └── providers/ # React context providers
-├── lib/ # Utilities & configuration
-│ ├── auth.ts # NextAuth configuration
-│ ├── db.ts # Prisma client
-│ ├── realtime/ # WebSocket/Redis
-│ └── validations/ # Zod schemas
-├── prisma/ # Database schema
-├── desktop-agent/ # Tauri desktop app
-├── hooks/ # Custom React hooks
-├── types/ # TypeScript definitions
-└── public/ # Static assets
-\`\`\`
-
-## ⚙️ Environment Variables
-
-Create a `.env` file with:
-
-\`\`\`env
-
-# Database (required)
-
-DATABASE_URL="postgresql://user:pass@host:5432/trackex"
-
-# NextAuth (required)
-
-NEXTAUTH_URL="http://localhost:3000"
-NEXTAUTH_SECRET="your-32-char-secret"
-
-# Admin credentials (required)
-
-ADMIN_EMAIL="admin@example.com"
-ADMIN_PASSWORD_HASH="$2a$12$..." # bcrypt hash
-
-# Device authentication (required)
-
-DEVICE_TOKEN_SECRET="your-device-secret"
-
-# Optional
-
-REDIS_URL="redis://localhost:6379"
-DEFAULT_EVENTS_RETENTION_DAYS=90
-DEFAULT_SCREENSHOTS_RETENTION_DAYS=30
-\`\`\`
-
-### Generate Password Hash
-
-\`\`\`bash
-node -e "require('bcryptjs').hash('yourpassword', 12).then(h=>console.log(h))"
-\`\`\`
-
-## 🚀 Installation
-
-\`\`\`bash
-
-# Clone repository
-
-git clone https://github.com/your-org/trackex.git
-cd trackex
-
-# Install dependencies
-
-npm install
-
-# Configure environment
-
-cp .env.example .env
-
-# Edit .env with your values
-
-# Run database migrations
-
-npx prisma migrate dev
-
-# Generate Prisma client
-
-npx prisma generate
-\`\`\`
-
-## 💻 Development
-
-\`\`\`bash
-
-# Start development server
-
-npm run dev
-
-# With network access (for testing from other devices)
-
-npm run dev:server
-
-# Run type checking
-
-npm run typecheck
-
-# Run linting
-
-npm run lint
-
-# Run tests
-
-npm run test
-\`\`\`
-
-Open [http://localhost:3000](http://localhost:3000)
-
-## 🏗️ Production Build
-
-\`\`\`bash
-
-# Build for production
-
-npm run build
-
-# Start production server
-
-npm start
-
-# Or with network access
-
-npm run start:server
-\`\`\`
-
-## 📦 Deployment
-
-### Hetzner (Pre-configured)
-
-\`\`\`bash
-
-# Full deployment
-
-./deploy-to-hetzner.sh
-
-# Quick update
-
-./deploy-update.sh
-\`\`\`
-
-### Vercel
-
-1. Connect GitHub repository
-2. Add environment variables in Vercel dashboard
-3. Deploy
-
-### Docker
-
-\`\`\`bash
-docker build -t trackex .
-docker run -p 3000:3000 --env-file .env trackex
-\`\`\`
-
-## 🖥 Desktop Agent
-
-### Build Requirements
-
-- **macOS**: Xcode CLI Tools, macOS 10.15+
-- **Windows**: Visual Studio 2022 C++ tools, Windows 10 1809+
-- **Both**: Node.js 24.6.0+, Rust 1.89.0+
-
-### Build
-
-\`\`\`bash
-cd desktop-agent/trackex-agent
-npm install
-npm run tauri build
-\`\`\`
-
-### Output
-
-- macOS: `.dmg` and `.app`
-- Windows: `.msi` and `.exe`
-
-## 📜 Available Scripts
-
-| Script                   | Description              |
-| ------------------------ | ------------------------ |
-| `npm run dev`            | Start development server |
-| `npm run build`          | Build production bundle  |
-| `npm start`              | Start production server  |
-| `npm run lint`           | Run ESLint               |
-| `npm run typecheck`      | TypeScript type checking |
-| `npm run test`           | Run unit tests           |
-| `npm run e2e`            | Run E2E tests            |
-| `npm run prisma:migrate` | Run database migrations  |
-| `npm run deploy`         | Deploy to Hetzner        |
-| `npm run deploy:update`  | Quick deploy update      |
-
-## 🗄 Database Models
-
-| Model           | Purpose                    |
-| --------------- | -------------------------- |
-| **User**        | Admin accounts             |
-| **Employee**    | Team members being tracked |
-| **Team**        | Organizational groups      |
-| **Policy**      | Tracking configuration     |
-| **AppRule**     | App categorization rules   |
-| **Device**      | Employee devices           |
-| **WorkSession** | Clock in/out records       |
-| **Event**       | Activity events            |
-| **Screenshot**  | Screen captures            |
-| **AppUsage**    | App usage tracking         |
-| **AuditLog**    | Admin action logging       |
-
-## 🔒 Authentication
-
-- **Admin**: NextAuth.js with credentials provider
-- **Devices**: Token-based authentication via `DEVICE_TOKEN_SECRET`
-- **Sessions**: JWT-based, 24-hour expiry
-
-## 📡 Real-time Features
-
-- Socket.IO for WebSocket connections
-- Redis for scalable pub/sub (optional)
-- In-memory fallback when Redis unavailable
-- Live employee status and activity updates
-
-## 🔗 API Endpoints
-
-| Endpoint                | Method         | Description           |
-| ----------------------- | -------------- | --------------------- |
-| `/api/auth/*`           | Various        | Authentication        |
-| `/api/employees`        | GET/POST       | List/create employees |
-| `/api/employees/[id]`   | GET/PUT/DELETE | Employee CRUD         |
-| `/api/teams`            | GET/POST       | Team management       |
-| `/api/policies`         | GET/POST       | Policy configuration  |
-| `/api/app-rules`        | GET/POST       | App categorization    |
-| `/api/ingest/events`    | POST           | Desktop agent events  |
-| `/api/ingest/heartbeat` | POST           | Device heartbeats     |
-| `/api/analytics/*`      | GET            | Analytics data        |
-| `/api/live/*`           | GET            | Real-time status      |
-| `/api/screenshots/*`    | GET            | Screenshot retrieval  |
-
-## 📄 License
-
-Proprietary - All rights reserved
-
-## 🆘 Support
-
-For support, contact: support@trackex.app
-\`\`\`
-
----
-
-## 7. Additional Context
-
-### Further Considerations
-
-1. **Environment Setup**: Do you need help setting up the PostgreSQL database or Neon account? I can provide specific instructions for either option.
-
-2. **Desktop Agent Development**: Are you planning to modify the Tauri desktop agent? That requires additional Rust toolchain setup.
-
-3. **Redis Configuration**: For production with multiple users, Redis is recommended for real-time features. Should I include Redis setup instructions?
-2222222222222222222222222222222
+This software is proprietary and confidential. Unauthorized distribution, modification, or reverse engineering is prohibited.
