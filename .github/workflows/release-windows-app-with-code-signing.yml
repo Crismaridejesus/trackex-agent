@@ -1,6 +1,6 @@
-name: Release Windows Installer with Code Signing
+name: Release Windows App with Code Signing
 
-# This workflow builds Windows installers (NSIS and MSI) with code signing
+# This workflow builds Windows App (NSIS and MSI) with code signing
 # It supports both x64 and x86 architectures with auto-update functionality
 
 on:

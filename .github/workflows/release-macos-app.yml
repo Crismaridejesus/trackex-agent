@@ -14,9 +14,11 @@ jobs:
           - platform: 'macos-latest'
             args: '--target aarch64-apple-darwin'
             arch: 'aarch64'
+            rust_target: 'aarch64-apple-darwin' 
           - platform: 'macos-latest'
             args: '--target x86_64-apple-darwin'
             arch: 'x86_64'
+            rust_target: 'x86_64-apple-darwin' 
 
     runs-on: ${{ matrix.platform }}
     
@@ -28,7 +30,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 'lts/*'
-          cache: 'npm'  # Change to 'yarn' or 'pnpm' if needed
+          cache: 'npm'
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -40,8 +42,12 @@ jobs:
         with:
           workspaces: './src-tauri -> target'
 
+      - name: Create .env file
+        run: |
+          echo "VITE_SERVER_URL=${{ secrets.VITE_SERVER_URL || 'https://trackex.app' }}" > .env
+
       - name: Install frontend dependencies
-        run: npm install  # Change to 'yarn install' or 'pnpm install' if needed
+        run: npm install
 
       # This step imports the certificate into a temporary keychain
       - name: Import Apple Developer Certificate
@@ -106,7 +112,7 @@ jobs:
 
       - name: Upload build artifacts
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4    
         with:
           name: macos-${{ matrix.arch }}-build
           path: |
@@ -114,12 +120,4 @@ jobs:
             src-tauri/target/${{ matrix.rust_target }}/release/bundle/macos/*.tar.gz
             src-tauri/target/${{ matrix.rust_target }}/release/bundle/macos/*.sig
             src-tauri/target/${{ matrix.rust_target }}/release/bundle/dmg/*.dmg
-            src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app
-            src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.tar.gz
-            src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.sig
-            src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
-            src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.app
-            src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.tar.gz
-            src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.sig
-            src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
           if-no-files-found: warn

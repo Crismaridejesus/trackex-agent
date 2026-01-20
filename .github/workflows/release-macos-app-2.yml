@@ -1,4 +1,4 @@
-name: Release macOS App with Auto-Update
+name: Release macOS App 2
 
 # This workflow builds macOS apps with automatic update support
 # It creates both fresh installers and updater bundles
