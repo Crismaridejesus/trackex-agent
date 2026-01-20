@@ -1,9 +1,6 @@
 name: Release macOS App
 
 on:
-  push:
-    branches:
-      - release
   workflow_dispatch:
 
 jobs:

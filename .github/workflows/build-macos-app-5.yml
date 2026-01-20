@@ -1,0 +1,309 @@
+name: Release macOS App with Auto-Update
+
+# This workflow builds macOS apps with automatic update support
+# It creates both fresh installers and updater bundles
+
+on:
+  workflow_dispatch:
+
+jobs:
+  release-macos:
+    permissions:
+      contents: write  # Required to create releases and upload assets
+    
+    strategy:
+      fail-fast: false  # Continue building other targets if one fails
+      matrix:
+        include:
+          # Apple Silicon (M1, M2, M3, etc.)
+          - platform: 'macos-latest'
+            args: '--target aarch64-apple-darwin'
+            arch: 'aarch64'
+            rust_target: 'aarch64-apple-darwin'
+          
+          # Intel-based Macs
+          - platform: 'macos-latest'
+            args: '--target x86_64-apple-darwin'
+            arch: 'x86_64'
+            rust_target: 'x86_64-apple-darwin'
+
+    runs-on: ${{ matrix.platform }}
+    
+    steps:
+      # ============================================================
+      # SETUP ENVIRONMENT
+      # ============================================================
+      
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'  # Change to 'yarn', 'pnpm', or 'bun' if needed
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install frontend dependencies
+        run: npm install
+        # If using yarn: run: yarn install
+        # If using pnpm: run: pnpm install
+        # If using bun: run: bun install
+
+      # ============================================================
+      # APPLE CODE SIGNING SETUP
+      # ============================================================
+      
+      - name: Import Apple Developer Certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          echo "==> Creating certificate file from secret"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
+          
+          echo "==> Creating temporary keychain"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          
+          echo "==> Setting build keychain as default"
+          security default-keychain -s build.keychain
+          
+          echo "==> Unlocking keychain"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          
+          echo "==> Setting keychain timeout and disable lock on sleep"
+          security set-keychain-settings -t 3600 -u build.keychain
+          
+          echo "==> Importing certificate to keychain"
+          security import certificate.p12 \
+            -k build.keychain \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign
+          
+          echo "==> Allowing codesign to access keychain"
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$KEYCHAIN_PASSWORD" \
+            build.keychain
+          
+          echo "==> Verifying certificate installation"
+          security find-identity -v -p codesigning build.keychain
+
+      - name: Extract signing identity
+        run: |
+          CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application")
+          CERT_ID=$(echo "$CERT_INFO" | awk -F'"' '{print $2}')
+          echo "APPLE_SIGNING_IDENTITY=$CERT_ID" >> $GITHUB_ENV
+          echo "==> Using signing identity: $CERT_ID"
+
+      # ============================================================
+      # BUILD WITH UPDATER SUPPORT
+      # ============================================================
+      
+      - name: Build Tauri app with updater support
+        uses: tauri-apps/tauri-action@v0
+        env:
+          # GitHub token for creating releases
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
+          # === APPLE CODE SIGNING ===
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_IDENTITY }}
+          
+          # === UPDATER SIGNING ===
+          # These keys are different from Apple code signing!
+          # Generate with: tauri signer generate -w ~/.tauri/myapp.key
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          
+          # === NOTARIZATION (Choose one method) ===
+          
+          # Method 1: App Store Connect API (RECOMMENDED)
+          # APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          # APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          # APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
+          
+          # Method 2: Apple ID with App-Specific Password
+          # Uncomment if using this method instead of API
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        
+        with:
+          # === RELEASE CONFIGURATION ===
+          tagName: v__VERSION__  # Auto-replaced with app version
+          releaseName: 'v__VERSION__'
+          
+          releaseBody: |
+            ## 🎉 What's New in v__VERSION__
+            
+            ### ✨ Features
+            - List your new features here
+            
+            ### 🐛 Bug Fixes  
+            - List bug fixes here
+            
+            ### 📦 Installation
+            
+            **For new installations:**
+            - Download the appropriate `.dmg` file for your Mac:
+              - `*_aarch64.dmg` for Apple Silicon (M1/M2/M3+)
+              - `*_x64.dmg` for Intel Macs
+            - Open the DMG and drag the app to Applications
+            - Right-click the app and select "Open" on first launch
+            
+            **For existing installations:**
+            - The app will automatically notify you of this update
+            - Or manually check: Menu → About → Check for Updates
+            - Update will download and install seamlessly
+            
+            ### 🔒 Security
+            All releases are signed and notarized by Apple.
+            
+            ---
+            
+            **Full Changelog**: https://github.com/${{ github.repository }}/compare/previous-tag...v__VERSION__
+          
+          releaseDraft: true       # Set to false to publish immediately
+          prerelease: false        # Set to true for beta/RC releases
+          
+          # === BUILD ARGUMENTS ===
+          args: ${{ matrix.args }}
+          
+          # === UPDATER CONFIGURATION ===
+          # These settings control how update artifacts are generated and uploaded
+          
+          uploadUpdaterJson: true          # Upload latest.json for auto-updater
+          # This creates a JSON file that the app checks to see if updates are available
+          # Format: { "version": "1.0.1", "platforms": { "darwin-x86_64": {...} } }
+          
+          updaterJsonPreferNsis: false     # Not relevant for macOS (Windows only)
+          
+          uploadUpdaterSignatures: true    # Upload .sig signature files
+          # These verify the integrity of update bundles
+          
+          # === OPTIONAL CONFIGURATIONS ===
+          
+          # Uncomment if your Tauri project is not in the repository root
+          # projectPath: './my-tauri-app'
+          
+          # Uncomment to also upload to GitHub Actions artifacts
+          # uploadWorkflowArtifacts: true
+          
+          # Custom asset naming pattern (default is fine for most cases)
+          # releaseAssetNamePattern: '[name]-[version]-[platform]-[arch][ext]'
+
+      # ============================================================
+      # CLEANUP
+      # ============================================================
+      
+      - name: Cleanup keychain and certificate
+        if: always()  # Run even if previous steps fail
+        run: |
+          echo "==> Deleting temporary keychain"
+          security delete-keychain build.keychain || true
+          echo "==> Removing certificate file"
+          rm -f certificate.p12 || true
+
+      # ============================================================
+      # OPTIONAL: UPLOAD ARTIFACTS FOR DEBUGGING
+      # ============================================================
+      
+      - name: Upload build artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}-build
+          path: |
+            src-tauri/target/${{ matrix.rust_target }}/release/bundle/macos/*.app
+            src-tauri/target/${{ matrix.rust_target }}/release/bundle/macos/*.tar.gz
+            src-tauri/target/${{ matrix.rust_target }}/release/bundle/macos/*.sig
+            src-tauri/target/${{ matrix.rust_target }}/release/bundle/dmg/*.dmg
+          retention-days: 30
+          if-no-files-found: warn
+
+      # ============================================================
+      # LOG BUILD INFORMATION
+      # ============================================================
+      
+      - name: Display build information
+        if: success()
+        run: |
+          echo "=========================================="
+          echo "Build completed successfully!"
+          echo "=========================================="
+          echo "Architecture: ${{ matrix.arch }}"
+          echo "Platform: ${{ matrix.platform }}"
+          ls -lh src-tauri/target/${{ matrix.rust_target }}/release/bundle/macos/ || true
+          echo "=========================================="
+          echo "Update artifacts:"
+          ls -lh src-tauri/target/${{ matrix.rust_target }}/release/bundle/macos/*.tar.gz || true
+          ls -lh src-tauri/target/${{ matrix.rust_target }}/release/bundle/macos/*.sig || true
+          echo "=========================================="
+
+# ============================================================
+# OPTIONAL: CREATE UNIVERSAL BINARY
+# ============================================================
+# Uncomment this job if you want a single app that works on both architectures
+
+#   create-universal-binary:
+#     needs: release-macos
+#     runs-on: macos-latest
+#     permissions:
+#       contents: write
+#     
+#     steps:
+#       - name: Checkout repository
+#         uses: actions/checkout@v4
+#       
+#       - name: Download Intel build
+#         uses: actions/download-artifact@v4
+#         with:
+#           name: macos-x86_64-build
+#           path: ./intel-build
+#       
+#       - name: Download Apple Silicon build
+#         uses: actions/download-artifact@v4
+#         with:
+#           name: macos-aarch64-build
+#           path: ./arm-build
+#       
+#       - name: Create Universal Binary
+#         run: |
+#           echo "==> Creating universal binary..."
+#           # Extract apps
+#           cd intel-build && tar xzf *.tar.gz && cd ..
+#           cd arm-build && tar xzf *.tar.gz && cd ..
+#           
+#           # Create universal app structure
+#           cp -R intel-build/*.app universal.app
+#           
+#           # Combine binaries
+#           lipo -create \
+#             intel-build/*.app/Contents/MacOS/* \
+#             arm-build/*.app/Contents/MacOS/* \
+#             -output universal.app/Contents/MacOS/*
+#           
+#           # Verify
+#           lipo -info universal.app/Contents/MacOS/*
+#           
+#           # Package
+#           tar czf MyApp-universal.app.tar.gz universal.app
+#       
+#       - name: Upload to release
+#         uses: softprops/action-gh-release@v1
+#         with:
+#           files: MyApp-universal.app.tar.gz
+#           tag_name: v__VERSION__
