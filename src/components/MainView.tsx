@@ -111,14 +111,55 @@ function MainView({ authStatus, onLogout }: Readonly<MainViewProps>) {
     }, []);
 
     const parseLicenseError = (errorMessage: string): LicenseError | null => {
-        // Check if the error is a license error (402 Payment Required)
-        if (errorMessage.includes('NO_VALID_LICENSE') || errorMessage.includes('402') || errorMessage.includes('license')) {
+        // Check for specific license status errors
+        const message = errorMessage.toLowerCase();
+        
+        // INACTIVE license
+        if (message.includes('inactive') || message.includes('deactivated')) {
+            return {
+                isLicenseError: true,
+                status: 'INACTIVE',
+                message: 'Your license has been deactivated. Please contact your organization administrator to reactivate it.',
+            };
+        }
+        
+        // EXPIRED license
+        if (message.includes('expired')) {
+            return {
+                isLicenseError: true,
+                status: 'EXPIRED',
+                message: 'Your license has expired. Please contact your organization administrator to renew it.',
+            };
+        }
+        
+        // PENDING license
+        if (message.includes('pending')) {
+            return {
+                isLicenseError: true,
+                status: 'PENDING',
+                message: 'Your license is pending activation. Please contact your organization administrator.',
+            };
+        }
+        
+        // NO_VALID_LICENSE or 402 Payment Required (missing license)
+        if (message.includes('no_valid_license') || message.includes('402') || 
+            message.includes('no valid license') || message.includes('purchase a license')) {
             return {
                 isLicenseError: true,
                 status: 'NO_LICENSE',
                 message: 'Your organization needs to activate a license for your account before you can use the desktop agent.',
             };
         }
+        
+        // Generic license-related errors
+        if (message.includes('license')) {
+            return {
+                isLicenseError: true,
+                status: 'LICENSE_ERROR',
+                message: 'License verification failed. Please contact your organization administrator.',
+            };
+        }
+        
         return null;
     };
 
@@ -132,13 +173,18 @@ function MainView({ authStatus, onLogout }: Readonly<MainViewProps>) {
             const result = await invoke<LicenseCheckResult>('retry_license_check');
             
             if (!result.valid) {
-                // License still invalid
+                // License still invalid - parse and show overlay
                 const licenseErr = parseLicenseError(result.message);
                 if (licenseErr) {
-                    // This is a real license error (402) - backend will auto clock-out
+                    // This is a license error - show the license overlay
                     setLicenseError(licenseErr);
                 } else {
-                    setError('License verification failed. Please contact your administrator.');
+                    // Fallback: treat any invalid license response as a license error
+                    setLicenseError({
+                        isLicenseError: true,
+                        status: 'INVALID',
+                        message: result.message || 'License verification failed. Please contact your administrator.',
+                    });
                 }
             }
             // If valid, licenseError will remain null and UI will show normally
@@ -146,7 +192,7 @@ function MainView({ authStatus, onLogout }: Readonly<MainViewProps>) {
             const errorMessage = error as string;
             const licenseErr = parseLicenseError(errorMessage);
             if (licenseErr) {
-                // This is a real license error (402) - backend will auto clock-out
+                // This is a license error - show the license overlay
                 setLicenseError(licenseErr);
             } else {
                 // This is a server/network error (404, 500, etc.) - show as regular error

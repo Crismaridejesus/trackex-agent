@@ -1,6 +1,6 @@
 {
   "productName": "TrackEx Agent",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "identifier": "com.trackex.agent",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -32,8 +32,8 @@
     "longDescription": "Employee monitoring and time tracking agent for TrackEx platform",
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
     "macOS": {
-      "entitlements": "./entitlements.plist",
-      "minimumSystemVersion": "12.0",
+      "entitlements": "entitlements.plist",
+      "minimumSystemVersion": "12.6",
       "signingIdentity": "Developer ID Application: Leon Svoboda (C4DS6Q994G)",
       "hardenedRuntime": true
     },
