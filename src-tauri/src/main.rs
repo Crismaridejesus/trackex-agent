@@ -238,10 +238,25 @@ fn main() {
                 .item(&quit_i)
                 .build()?;
 
-            let _tray = TrayIconBuilder::new()
+            // Get tray icon safely - use default window icon or fallback to loading from file
+            let tray_icon = app.default_window_icon()
+                .cloned()
+                .or_else(|| {
+                    log::warn!("Default window icon not available, loading from file");
+                    tauri::image::Image::from_path("icons/icon.png").ok()
+                });
+
+            let mut tray_builder = TrayIconBuilder::new()
                 .menu(&menu)
-                .tooltip("TrackEx Agent")
-                .icon(app.default_window_icon().unwrap().clone())
+                .tooltip("TrackEx Agent");
+
+            if let Some(icon) = tray_icon {
+                tray_builder = tray_builder.icon(icon);
+            } else {
+                log::error!("Failed to load tray icon from both default and file path");
+            }
+
+            let _tray = tray_builder
                 .on_menu_event(move |app, event| match event.id.as_ref() {
                     "quit" => {
                         log::info!("Quit requested from tray menu");

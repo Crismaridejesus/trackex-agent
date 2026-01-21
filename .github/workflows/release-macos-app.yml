@@ -100,19 +100,3 @@ jobs:
           security delete-keychain build.keychain || true
           echo "==> Removing certificate file"
           rm -f certificate.p12 || true
-
-      - name: Upload build artifacts
-        if: success()
-        uses: actions/upload-artifact@v4    
-        with:
-          name: macos-${{ matrix.arch }}-build
-          path: |
-            src-tauri/target/${{ matrix.rust_target }}/release/bundle/macos/*.app
-            src-tauri/target/${{ matrix.rust_target }}/release/bundle/macos/*.tar.gz
-            src-tauri/target/${{ matrix.rust_target }}/release/bundle/macos/*.sig
-            src-tauri/target/${{ matrix.rust_target }}/release/bundle/dmg/*.dmg
-            src-tauri/target/release/bundle/macos/*.app
-            src-tauri/target/release/bundle/macos/*.tar.gz
-            src-tauri/target/release/bundle/macos/*.sig
-            src-tauri/target/release/bundle/dmg/*.dmg
-          if-no-files-found: warn

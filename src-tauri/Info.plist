@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>TrackEx captures screenshots for work activity verification as configured by your organization's monitoring policy.</string>
+    
+    <key>NSAccessibilityUsageDescription</key>
+    <string>TrackEx tracks application usage and window titles to provide accurate productivity insights during your work sessions.</string>
+</dict>
+</plist>
