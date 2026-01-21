@@ -238,12 +238,20 @@ fn main() {
                 .item(&quit_i)
                 .build()?;
 
-            // Get tray icon safely - use default window icon or fallback to loading from file
+            // Get tray icon from bundle icons or use embedded fallback
             let tray_icon = app.default_window_icon()
                 .cloned()
                 .or_else(|| {
-                    log::warn!("Default window icon not available, loading from file");
-                    tauri::image::Image::from_path("icons/icon.png").ok()
+                    log::warn!("Default window icon not available, using embedded icon");
+                    // Load icon from embedded bytes as fallback
+                    let icon_bytes = include_bytes!("../icons/icon.png");
+                    image::load_from_memory(icon_bytes)
+                        .ok()
+                        .and_then(|img| {
+                            let rgba = img.to_rgba8();
+                            let (width, height) = rgba.dimensions();
+                            Some(tauri::image::Image::new_owned(rgba.into_raw(), width, height))
+                        })
                 });
 
             let mut tray_builder = TrayIconBuilder::new()
@@ -253,7 +261,7 @@ fn main() {
             if let Some(icon) = tray_icon {
                 tray_builder = tray_builder.icon(icon);
             } else {
-                log::error!("Failed to load tray icon from both default and file path");
+                log::error!("Failed to load tray icon");
             }
 
             let _tray = tray_builder
