@@ -12,13 +12,13 @@ use log::{info, warn, error};
 static LICENSE_MONITOR_RUNNING: AtomicBool = AtomicBool::new(false);
 
 /// License check interval in seconds
-/// Set to 5 minutes (300 seconds) for production
+/// Changed to 30 seconds for faster license change detection (complementing SSE)
 /// Can be overridden with TRACKEX_LICENSE_CHECK_INTERVAL env var for testing
 fn get_license_check_interval() -> u64 {
     std::env::var("TRACKEX_LICENSE_CHECK_INTERVAL")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(300) // Default: 5 minutes
+        .unwrap_or(30) // Changed from 300 (5 min) to 30 seconds
 }
 
 /// Start the license monitoring background service
@@ -48,22 +48,8 @@ pub async fn start_license_monitor() {
                 continue;
             }
 
-            // Check if we should throttle (avoid checking too frequently)
-            if let Ok(app_state) = crate::storage::get_global_app_state() {
-                let state = app_state.lock().await;
-                
-                // Check if we checked recently (within last 2 minutes)
-                if let Some(last_check) = state.last_license_check {
-                    let now = chrono::Utc::now().timestamp();
-                    let elapsed = now - last_check;
-                    if elapsed < 120 {
-                        // Skip if checked less than 2 minutes ago
-                        continue;
-                    }
-                }
-            }
-
-            // Perform license check
+            // Perform license check every 30 seconds
+            // The server-side endpoint has its own 30s cache to minimize DB load
             match check_license_and_handle_expiration().await {
                 Ok(valid) => {
                     if !valid {
@@ -112,7 +98,8 @@ async fn check_license_and_handle_expiration() -> Result<bool, String> {
         Err(e) => return Err(format!("Failed to create API client: {}", e)),
     };
 
-    let license_url = "/api/agent/license-status";
+    // Use the new fast license check endpoint with 30s cache
+    let license_url = "/api/agent/license-check-fast";
     
     // Make license check request using the get_with_auth method
     let response = match client.get_with_auth(license_url).await {

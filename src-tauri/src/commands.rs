@@ -1275,7 +1275,38 @@ pub async fn clock_in(state: State<'_, Arc<Mutex<AppState>>>, app_handle: tauri:
             .await
             .map_err(|e| format!("Network error: {}", e))?;
 
-        if !response.status().is_success() {
+        let status = response.status();
+        
+        // Handle 402 Payment Required - license expired or invalid
+        if status == reqwest::StatusCode::PAYMENT_REQUIRED {
+            // End the local session since clock in was rejected
+            if let Err(e) = crate::storage::work_session::end_session().await {
+                log::error!("Failed to end local session after license check failure: {}", e);
+            }
+            
+            let error_body = response.text().await.unwrap_or_else(|_| String::new());
+            log::warn!("Clock in rejected: License invalid (402) - {}", error_body);
+            
+            // Try to parse error message from response
+            let error_message = if let Ok(json) = serde_json::from_str::<serde_json::Value>(&error_body) {
+                if let Some(error) = json.get("error").and_then(|v| v.as_str()) {
+                    error.to_string()
+                } else {
+                    String::from("Your license is expired or invalid. Please contact your administrator.")
+                }
+            } else {
+                String::from("Your license is expired or invalid. Please contact your administrator.")
+            };
+            
+            return Err(error_message);
+        }
+        
+        if !status.is_success() {
+            // End the local session since clock in failed
+            if let Err(e) = crate::storage::work_session::end_session().await {
+                log::error!("Failed to end local session after clock in failure: {}", e);
+            }
+            
             let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
             return Err(format!("Clock in failed: {}", error_text));
         }

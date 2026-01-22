@@ -627,11 +627,39 @@ pub async fn send_heartbeat_to_backend(heartbeat_data: &serde_json::Value) -> an
         .send()
         .await?;
     
-    if response.status().is_success() {
-        log::trace!("Heartbeat sent successfully (status: {})", response.status());
+    let status = response.status();
+    
+    // Handle 402 Payment Required - license expired or invalid
+    if status == reqwest::StatusCode::PAYMENT_REQUIRED {
+        log::warn!("Heartbeat failed: License expired or invalid (402)");
+        
+        // Get app state and trigger license expiration handler
+        if let Ok(app_state) = crate::storage::get_global_app_state() {
+            // Update license state
+            {
+                let mut state = app_state.lock().await;
+                state.license_valid = Some(false);
+                state.license_status = Some("EXPIRED".to_string());
+                state.last_license_check = Some(chrono::Utc::now().timestamp());
+            }
+            
+            // Check if user is clocked in before triggering auto-clockout
+            if is_clocked_in().await {
+                log::warn!("License invalid and user is clocked in - triggering auto-clockout");
+                // Call handle_license_expiration from the license_monitor module
+                license_monitor::handle_license_expiration(app_state).await;
+            } else {
+                log::info!("License invalid but user is not clocked in - no action needed");
+            }
+        }
+        
+        return Err(anyhow::anyhow!("License expired or invalid (402)"));
+    }
+    
+    if status.is_success() {
+        log::trace!("Heartbeat sent successfully (status: {})", status);
         Ok(())
     } else {
-        let status = response.status();
         let text = response.text().await.unwrap_or_default();
         log::error!("Heartbeat failed with status {}: {}", status, text);
         Err(anyhow::anyhow!("Heartbeat failed with status {}: {}", status, text))
