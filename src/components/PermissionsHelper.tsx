@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 interface PermissionsStatus {
@@ -14,6 +14,22 @@ interface PermissionsHelperProps {
 function PermissionsHelper({ permissionsStatus, onPermissionsGranted }: PermissionsHelperProps) {
   const [isRequesting, setIsRequesting] = useState(false);
   const [hasStartedSetup, setHasStartedSetup] = useState(false);
+  const [currentPlatform, setCurrentPlatform] = useState<string>("macos");
+
+  useEffect(() => {
+    const getPlatform = async () => {
+      try {
+        // Get platform from the app info command
+        const appInfo = await invoke<{ platform: string }>("get_app_info");
+        setCurrentPlatform(appInfo.platform);
+      } catch (error) {
+        console.error("Failed to get platform:", error);
+        // Default to macos if detection fails
+        setCurrentPlatform("macos");
+      }
+    };
+    getPlatform();
+  }, []);
 
   const handleStartPermissionSetup = async () => {
     setHasStartedSetup(true);
@@ -76,7 +92,6 @@ function PermissionsHelper({ permissionsStatus, onPermissionsGranted }: Permissi
 
           <div className="permissions-blocked">
             <div className="permission-status">
-              <div className="permission-icon">❌</div>
               <div className="permission-text">
                 <h3>Screen Recording: Not Enabled</h3>
                 <p>Required for work activity tracking</p>
@@ -94,7 +109,7 @@ function PermissionsHelper({ permissionsStatus, onPermissionsGranted }: Permissi
           </div>
 
           <div className="permissions-footer">
-            <p><strong>Tip:</strong> You may need to enter your macOS password to grant this permission</p>
+            <p>💡 <strong>Tip:</strong> {currentPlatform === "macos" ? "You may need to enter your macOS password to grant this permission" : "Administrator privileges may be required to grant this permission"}</p>
           </div>
         </div>
       </div>
@@ -111,9 +126,14 @@ function PermissionsHelper({ permissionsStatus, onPermissionsGranted }: Permissi
 
         <div className="permissions-explanation">
           <div className="permission-preview">
+            <div className="permission-icon">🖥️</div>
             <div className="permission-text">
               <h3>What happens next:</h3>
-              <p>macOS will ask you to grant Screen Recording permission for work activity tracking. <strong>You may need to enter your macOS password.</strong></p>
+              <p>
+                {currentPlatform === "macos" 
+                  ? "macOS will ask you to grant Screen Recording permission for work activity tracking. You may need to enter your macOS password." 
+                  : "Your system will ask you to grant screen monitoring permission for work activity tracking."}
+              </p>
               <p style={{ marginTop: '10px' }}>After granting permission, <strong>restart the app</strong> and you're all set!</p>
             </div>
           </div>
@@ -133,7 +153,7 @@ function PermissionsHelper({ permissionsStatus, onPermissionsGranted }: Permissi
           {isRequesting ? (
             <div className="requesting-permissions">
               <div className="loading-spinner"></div>
-              <p>Requesting permission from macOS...</p>
+              <p>Requesting permission from {currentPlatform === "macos" ? "macOS" : "your system"}...</p>
               <p style={{ fontSize: '0.9em', marginTop: '8px', opacity: 0.8 }}>You may see a system dialog - please grant the permission</p>
             </div>
           ) : (
