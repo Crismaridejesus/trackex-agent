@@ -380,7 +380,34 @@ pub async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
         }
         Ok(Ok(())) => {
             log::info!("✓ Update installed successfully, application will restart");
-            Ok(())
+            
+            // macOS requires explicit restart call, Windows auto-restarts
+            #[cfg(target_os = "macos")]
+            {
+                log::info!("macOS: Explicitly restarting application after update");
+                // Small delay to ensure update is fully applied
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                
+                match app.restart() {
+                    Ok(_) => {
+                        log::info!("✓ Restart triggered successfully");
+                        Ok(())
+                    }
+                    Err(e) => {
+                        log::error!("✗ Failed to restart application: {:?}", e);
+                        Err(format!(
+                            "Update installed successfully but failed to restart app: {:?}\n\
+                            Please manually quit and reopen TrackEx to complete the update.", e
+                        ))
+                    }
+                }
+            }
+            
+            #[cfg(not(target_os = "macos"))]
+            {
+                log::info!("Non-macOS: Update complete, system should restart automatically");
+                Ok(())
+            }
         }
     }?;
     
