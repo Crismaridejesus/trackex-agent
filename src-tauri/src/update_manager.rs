@@ -388,19 +388,11 @@ pub async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
                 // Small delay to ensure update is fully applied
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 
-                match app.restart() {
-                    Ok(_) => {
-                        log::info!("✓ Restart triggered successfully");
-                        Ok(())
-                    }
-                    Err(e) => {
-                        log::error!("✗ Failed to restart application: {:?}", e);
-                        Err(format!(
-                            "Update installed successfully but failed to restart app: {:?}\n\
-                            Please manually quit and reopen TrackEx to complete the update.", e
-                        ))
-                    }
-                }
+                // app.restart() terminates the process immediately, no return value
+                app.restart();
+                // This line is never reached, but satisfies type checker
+                #[allow(unreachable_code)]
+                Ok(())
             }
             
             #[cfg(not(target_os = "macos"))]
