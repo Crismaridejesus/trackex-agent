@@ -25,11 +25,5 @@
 	<!-- Optional: If your app needs screen recording -->
 	<key>com.apple.security.device.screen-capture</key>
 	<true/>
-
-	<!-- Keychain access group for secure credential storage -->
-	<key>keychain-access-groups</key>
-	<array>
-		<string>$(AppIdentifierPrefix)com.trackex.agent</string>
-	</array>
 </dict>
 </plist>

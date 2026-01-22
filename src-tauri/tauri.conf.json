@@ -33,7 +33,7 @@
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
     "macOS": {
       "entitlements": "entitlements.plist",
-      "minimumSystemVersion": "11.0",
+      "minimumSystemVersion": "12.6",
       "signingIdentity": "Developer ID Application: Leon Svoboda (C4DS6Q994G)",
       "hardenedRuntime": true
     },
