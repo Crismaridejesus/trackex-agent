@@ -27,16 +27,22 @@ function PermissionsHelper({ permissionsStatus, onPermissionsGranted }: Permissi
       // Then call the standard permission request
       await invoke("request_permissions");
       
-      // Give macOS time to show permission dialog and user to respond
-      setTimeout(() => {
+      // Give user time to respond to the system dialog
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Check if permission was actually granted
+      const newStatus = await invoke<PermissionsStatus>("get_permissions_status");
+      
+      if (newStatus.screen_recording) {
+        // Success! Permission was granted, proceed to main app
+        onPermissionsGranted();
+      } else {
+        // Permission not granted - show manual fallback instructions
         setIsRequesting(false);
-        // Check status after user has had time to approve
-        setTimeout(() => {
-          onPermissionsGranted();
-        }, 1000);
-      }, 2000);
+      }
     } catch (error) {
       console.error("Failed to request permissions:", error);
+      // On error, show manual fallback
       setIsRequesting(false);
     }
   };
@@ -52,29 +58,30 @@ function PermissionsHelper({ permissionsStatus, onPermissionsGranted }: Permissi
       <div className="permissions-container">
         <div className="permissions-helper">
           <div className="permissions-header">
-            <h1>⚠️ Permissions Required</h1>
-            <p>TrackEx cannot function without screen recording permission</p>
+            <h1>Manual Permission Setup Needed</h1>
+            <p>The automatic permission setup didn't complete. Please enable it manually:</p>
+          </div>
+
+          <div className="permissions-instructions">
+            <h3>Step-by-Step Instructions:</h3>
+            <ol>
+              <li>Open <strong>System Preferences</strong> (or <strong>System Settings</strong> on newer macOS)</li>
+              <li>Go to <strong>Security & Privacy</strong> → <strong>Privacy</strong> tab</li>
+              <li>Click <strong>Screen Recording</strong> from the left sidebar</li>
+              <li>Click the <strong>🔒 lock icon</strong> and <strong>enter your password</strong> to make changes</li>
+              <li>Find and <strong>check the box</strong> next to <strong>TrackEx</strong> or <strong>trackex</strong></li>
+              <li><strong>Quit and restart</strong> the TrackEx app completely</li>
+            </ol>
           </div>
 
           <div className="permissions-blocked">
             <div className="permission-status">
               <div className="permission-icon">❌</div>
               <div className="permission-text">
-                <h3>Screen Recording: Denied</h3>
-                <p>This permission is required for TrackEx to work</p>
+                <h3>Screen Recording: Not Enabled</h3>
+                <p>Required for work activity tracking</p>
               </div>
             </div>
-          </div>
-
-          <div className="permissions-instructions">
-            <h3>To enable TrackEx:</h3>
-            <ol>
-              <li>Open <strong>System Preferences</strong> → <strong>Security & Privacy</strong></li>
-              <li>Click the <strong>Privacy</strong> tab</li>
-              <li>Select <strong>Screen Recording</strong> from the list</li>
-              <li>Check the box next to <strong>TrackEx Agent</strong></li>
-              <li>Restart TrackEx Agent</li>
-            </ol>
           </div>
 
           <div className="permissions-actions">
@@ -82,12 +89,12 @@ function PermissionsHelper({ permissionsStatus, onPermissionsGranted }: Permissi
               onClick={handleRetryPermissions}
               className="request-permissions-button secondary"
             >
-              Try Permission Setup Again
+              ← Try Automatic Setup Again
             </button>
           </div>
 
           <div className="permissions-footer">
-            <p>🔒 TrackEx requires these permissions to track work activity securely</p>
+            <p><strong>Tip:</strong> You may need to enter your macOS password to grant this permission</p>
           </div>
         </div>
       </div>
@@ -98,27 +105,27 @@ function PermissionsHelper({ permissionsStatus, onPermissionsGranted }: Permissi
     <div className="permissions-container">
       <div className="permissions-helper">
         <div className="permissions-header">
-          <h1>🔐 Final Setup Step</h1>
-          <p>Great! You're logged in. Now let's enable work tracking permissions.</p>
+          <h1>Final Setup Step</h1>
+          <p>Almost there! Now let's enable work tracking permissions.</p>
         </div>
 
         <div className="permissions-explanation">
           <div className="permission-preview">
-            <div className="permission-icon">📺</div>
             <div className="permission-text">
               <h3>What happens next:</h3>
-              <p>macOS will ask you to allow TrackEx to record your screen for work tracking. After granting permissions, <strong>you'll need to restart the app once</strong> and then you're all set!</p>
+              <p>macOS will ask you to grant Screen Recording permission for work activity tracking. <strong>You may need to enter your macOS password.</strong></p>
+              <p style={{ marginTop: '10px' }}>After granting permission, <strong>restart the app</strong> and you're all set!</p>
             </div>
           </div>
         </div>
 
         <div className="permissions-benefits">
-          <h3>✅ Once complete, TrackEx will:</h3>
+          <h3>Once enabled, TrackEx will:</h3>
           <ul>
             <li>Automatically track your work sessions</li>
-            <li>Monitor application usage for insights</li>
-            <li>Take screenshots when requested</li>
-            <li>Remember your login (no need to re-enter credentials)</li>
+            <li>Monitor application usage for productivity insights</li>
+            <li>Capture work activity when needed</li>
+            <li>Remember your login credentials</li>
           </ul>
         </div>
 
@@ -126,7 +133,8 @@ function PermissionsHelper({ permissionsStatus, onPermissionsGranted }: Permissi
           {isRequesting ? (
             <div className="requesting-permissions">
               <div className="loading-spinner"></div>
-              <p>Grant permissions when macOS asks, then restart the app</p>
+              <p>Requesting permission from macOS...</p>
+              <p style={{ fontSize: '0.9em', marginTop: '8px', opacity: 0.8 }}>You may see a system dialog - please grant the permission</p>
             </div>
           ) : (
             <button
@@ -139,7 +147,7 @@ function PermissionsHelper({ permissionsStatus, onPermissionsGranted }: Permissi
         </div>
 
         <div className="permissions-footer">
-          <p>🔒 After granting permissions, restart TrackEx to complete setup</p>
+          <p>This permission is required for TrackEx to function properly</p>
         </div>
       </div>
     </div>
