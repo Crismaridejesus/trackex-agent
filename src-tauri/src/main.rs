@@ -105,7 +105,7 @@ fn main() {
         use signal_hook::consts::signal::*;
         use signal_hook::iterator::Signals;
         
-        let signals = match Signals::new(&[SIGTERM, SIGINT, SIGHUP]) {
+        let mut signals = match Signals::new(&[SIGTERM, SIGINT, SIGHUP]) {
             Ok(s) => s,
             Err(e) => {
                 log::error!("Failed to setup signal handlers: {}", e);
