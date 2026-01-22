@@ -127,6 +127,7 @@ fn main() {
             send_diagnostics,
             get_permissions_status,
             request_permissions,
+            trigger_screen_permission_dialog,
             get_app_info,
             send_app_focus_event,
             send_heartbeat,

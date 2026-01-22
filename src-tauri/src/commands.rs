@@ -1948,6 +1948,47 @@ pub async fn request_permissions() -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// Trigger screen recording permission dialog by attempting actual screen capture
+/// This is more reliable than the ScreenCaptureAccess.request() API on macOS
+#[tauri::command]
+pub async fn trigger_screen_permission_dialog() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+        
+        log::info!("Triggering screen permission dialog via test screencapture...");
+        
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("trackex_permission_test.jpg");
+        
+        // Run screencapture - this WILL trigger the permission dialog if not granted
+        // The -x flag prevents the shutter sound
+        let output = Command::new("screencapture")
+            .arg("-x")  // No sound
+            .arg(test_file.to_string_lossy().to_string())
+            .output()
+            .map_err(|e| format!("Failed to run screencapture: {}", e))?;
+        
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            log::warn!("screencapture command failed (expected if permission not granted): {}", stderr);
+        } else {
+            log::info!("Test screenshot succeeded - permission likely granted");
+        }
+        
+        // Clean up test file if it was created
+        let _ = std::fs::remove_file(&test_file);
+        
+        Ok(())
+    }
+    
+    #[cfg(not(target_os = "macos"))]
+    {
+        // On other platforms, no special permission trigger needed
+        Ok(())
+    }
+}
+
 #[tauri::command]
 pub async fn get_app_info() -> Result<serde_json::Value, String> {
     Ok(serde_json::json!({

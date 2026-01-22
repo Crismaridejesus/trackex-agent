@@ -20,10 +20,14 @@ function PermissionsHelper({ permissionsStatus, onPermissionsGranted }: Permissi
     setIsRequesting(true);
     
     try {
-      // Request all permissions at once
+      // First, trigger the actual permission dialog by attempting a screenshot
+      // This is more reliable on macOS than ScreenCaptureAccess.request()
+      await invoke("trigger_screen_permission_dialog");
+      
+      // Then call the standard permission request
       await invoke("request_permissions");
       
-      // Give macOS time to show all permission dialogs
+      // Give macOS time to show permission dialog and user to respond
       setTimeout(() => {
         setIsRequesting(false);
         // Check status after user has had time to approve
