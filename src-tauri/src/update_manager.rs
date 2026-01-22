@@ -7,6 +7,8 @@
 //! - Get update progress events
 
 use serde::{Deserialize, Serialize};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tauri::Emitter;
 use tauri_plugin_updater::UpdaterExt;
 
@@ -225,22 +227,51 @@ pub async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
         })?;
     
     log::info!("Downloading update version {}...", update.version);
+    log::info!("Update download URL: {}", update.download_url);
+    
+    // Log the file format for debugging
+    if update.download_url.ends_with(".tar.gz") {
+        log::info!("Update format: .tar.gz (correct for macOS)");
+    } else if update.download_url.ends_with(".dmg") {
+        log::error!("Update format: .dmg (INCORRECT - must be .tar.gz for auto-updates on macOS!)");
+        return Err(
+            "Invalid update file format: .dmg files cannot be used for auto-updates on macOS. \
+            The downloadUrl in the database must point to a .tar.gz file. \
+            DMG files are for initial installation only.".to_string()
+        );
+    } else if update.download_url.ends_with(".msi") || update.download_url.ends_with(".exe") {
+        log::info!("Update format: Windows installer (correct for Windows)");
+    } else {
+        log::warn!("Update format: Unknown format - {}", update.download_url);
+    }
     
     // Clone app handle for the progress callback
     let app_for_progress = app.clone();
     
-    // Download and install the update with progress tracking
-    // Note: The tauri-plugin-updater callback receives (chunk_len: usize, content_len: Option<u64>)
-    update
-        .download_and_install(
-            |chunk_len, content_len| {
-                // Convert to u64 for our progress struct
-                let downloaded = chunk_len as u64;
+    // Track cumulative downloaded bytes (chunk_len is per chunk, not total!)
+    let downloaded_bytes = Arc::new(Mutex::new(0u64));
+    let downloaded_bytes_clone = downloaded_bytes.clone();
+    let last_logged_percentage = Arc::new(Mutex::new(0u8));
+    let last_logged_clone = last_logged_percentage.clone();
+    
+    log::info!("Starting download and installation with 5-minute timeout...");
+    
+    // Wrap in timeout to prevent infinite hangs during extraction
+    let result = tokio::time::timeout(
+        Duration::from_secs(300),  // 5 minutes max for download + extraction
+        update.download_and_install(
+            move |chunk_len, content_len| {
+                // CRITICAL FIX: Accumulate downloaded bytes (chunk_len is THIS chunk only!)
+                let mut total_downloaded = downloaded_bytes_clone.lock().unwrap();
+                *total_downloaded += chunk_len as u64;
+                let downloaded = *total_downloaded;
+                drop(total_downloaded);
+                
                 let total = content_len.unwrap_or(0);
                 
                 // Calculate percentage
                 let percentage = if total > 0 {
-                    ((downloaded as f64 / total as f64) * 100.0) as u8
+                    ((downloaded as f64 / total as f64) * 100.0).min(100.0) as u8
                 } else {
                     0
                 };
@@ -256,18 +287,103 @@ pub async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
                     log::warn!("Failed to emit update progress event: {}", e);
                 }
                 
-                // Log progress every 10%
-                if percentage % 10 == 0 && percentage > 0 {
-                    log::info!("Update download progress: {}% ({}/{} bytes)", percentage, downloaded, total);
+                // Log progress every 10% (avoid log spam)
+                let mut last_pct = last_logged_clone.lock().unwrap();
+                if percentage >= *last_pct + 10 && percentage > 0 {
+                    log::info!("Download progress: {}% ({}/{} bytes)", percentage, downloaded, total);
+                    *last_pct = percentage;
+                }
+                drop(last_pct);
+                
+                // Log when download phase completes
+                if total > 0 && downloaded >= total {
+                    log::info!("✓ Download complete ({} bytes)", total);
+                    log::info!("→ Extracting .tar.gz archive... (this may take 30-60 seconds)");
                 }
             },
             || {
-                // Called before restart
-                log::info!("Update downloaded and verified, preparing to restart...");
+                // Called after extraction, before restart
+                log::info!("✓ Extraction and installation complete!");
+                log::info!("→ Restarting application...");
             },
         )
-        .await
-        .map_err(|e| {
+    ).await;
+    
+    // Handle timeout
+    match result {
+        Err(_elapsed) => {
+            log::error!("Update installation timed out after 5 minutes");
+            return Err(
+                "Update installation timed out after 5 minutes.\n\n\
+                This could be caused by:\n\
+                1. Very slow network connection\n\
+                2. Corrupted .tar.gz file that can't be extracted\n\
+                3. Insufficient disk space for extraction\n\
+                4. Permission issues writing to application directory\n\n\
+                Please check available disk space and try again.".to_string()
+            );
+        }
+        Ok(Err(e)) => {
+            // Extract the inner error from download_and_install
+            let error_msg = format!("{}", e);
+            log::error!("Update installation failed: {}", error_msg);
+            
+            Err(
+                if error_msg.contains("403") || error_msg.contains("Forbidden") {
+                    format!(
+                        "Failed to install update: Download forbidden (403).\n\n\
+                        The update file URL is not publicly accessible.\n\
+                        This usually means:\n\
+                        1. The file requires authentication\n\
+                        2. The URL is incorrect or expired\n\
+                        3. Using placeholder/test URLs in development\n\n\
+                        Technical details: {}",
+                        error_msg
+                    )
+                } else if error_msg.contains("404") || error_msg.contains("Not Found") {
+                    format!(
+                        "Failed to install update: File not found (404).\n\n\
+                        The update file doesn't exist at the specified URL.\n\
+                        Please check the downloadUrl in the database.\n\n\
+                        Technical details: {}",
+                        error_msg
+                    )
+                } else if error_msg.contains("extract") || error_msg.contains("archive") || error_msg.contains("tar") {
+                    format!(
+                        "Failed to extract update archive.\n\n\
+                        The downloaded file could not be extracted.\n\
+                        This usually means:\n\
+                        1. On macOS: downloadUrl points to .dmg instead of .tar.gz\n\
+                        2. Corrupted .tar.gz file during upload/download\n\
+                        3. Insufficient disk space for extraction\n\
+                        4. Permission denied writing to application directory\n\n\
+                        IMPORTANT: macOS requires .tar.gz files for auto-updates, not .dmg!\n\n\
+                        Technical details: {}",
+                        error_msg
+                    )
+                } else if error_msg.contains("signature") || error_msg.contains("verify") {
+                    format!(
+                        "Failed to install update: Signature verification failed.\n\n\
+                        The update signature doesn't match.\n\
+                        This usually means:\n\
+                        1. Wrong signature in the database (must match the .tar.gz.sig file)\n\
+                        2. File was modified after signing\n\
+                        3. Using wrong public key in tauri.conf.json\n\n\
+                        Technical details: {}",
+                        error_msg
+                    )
+                } else {
+                    format!("Failed to install update: {}", error_msg)
+                }
+            )
+        }
+        Ok(Ok(())) => {
+            log::info!("✓ Update installed successfully, application will restart");
+            Ok(())
+        }
+    }?;
+    
+    Ok(())
             let error_msg = format!("{}", e);
             log::error!("Failed to download and install update: {}", error_msg);
             
@@ -291,14 +407,30 @@ pub async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
                     Technical details: {}",
                     error_msg
                 )
+            } else if error_msg.contains("extract") || error_msg.contains("archive") || error_msg.contains("tar") {
+                format!(
+                    "Failed to install update: Extraction error.\n\n\
+                    The downloaded file could not be extracted.\n\
+                    This usually means:\n\
+                    1. On macOS: downloadUrl points to .dmg instead of .tar.gz\n\
+                    2. The file is corrupted\n\
+                    3. Signature verification failed\n\n\
+                    IMPORTANT: macOS requires .tar.gz files for auto-updates, not .dmg!\n\n\
+                    Technical details: {}",
+                    error_msg
+                )
+            } else if error_msg.contains("signature") || error_msg.contains("verify") {
+                format!(
+                    "Failed to install update: Signature verification failed.\n\n\
+                    The update signature doesn't match.\n\
+                    This usually means:\n\
+                    1. Wrong signature in the database\n\
+                    2. File was modified after signing\n\
+                    3. Using wrong public key in tauri.conf.json\n\n\
+                    Technical details: {}",
+                    error_msg
+                )
             } else {
-                format!("Failed to install update: {}", error_msg)
-            }
-        })?;
-    
-    log::info!("Update installed successfully, application will restart");
-    
-    Ok(())
 }
 
 /// Get the current app version
