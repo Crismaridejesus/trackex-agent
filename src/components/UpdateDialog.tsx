@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { 
@@ -83,6 +83,12 @@ function UpdateDialog({ autoCheck = true, onDismiss }: Readonly<UpdateDialogProp
     }
   }, []);
 
+  // Use ref to store latest checkForUpdates without causing SSE reconnections
+  const checkForUpdatesRef = useRef(checkForUpdates);
+  useEffect(() => {
+    checkForUpdatesRef.current = checkForUpdates;
+  }, [checkForUpdates]);
+
   useEffect(() => {
     if (autoCheck) {
       // Check for updates on mount
@@ -90,12 +96,13 @@ function UpdateDialog({ autoCheck = true, onDismiss }: Readonly<UpdateDialogProp
 
       // Check more frequently for mandatory updates (every 30 minutes)
       // This ensures users can't indefinitely avoid mandatory updates
-      const interval = setInterval(checkForUpdates, 30 * 60 * 1000);
+      const interval = setInterval(() => checkForUpdatesRef.current(), 30 * 60 * 1000);
       return () => clearInterval(interval);
     }
   }, [autoCheck, checkForUpdates]);
 
   // Real-time update notification listener (SSE)
+  // CRITICAL: Empty dependency array prevents reconnections during state changes
   useEffect(() => {
     // Connect to SSE stream for real-time notifications
     connectToUpdateStream();
@@ -113,8 +120,8 @@ function UpdateDialog({ autoCheck = true, onDismiss }: Readonly<UpdateDialogProp
         if (notification.mandatory) {
           console.log("[UpdateDialog] Mandatory update notification received, checking immediately...");
         }
-        // Always re-check for updates when notified
-        checkForUpdates();
+        // Always re-check for updates when notified (use ref to get latest callback)
+        checkForUpdatesRef.current();
       }
     });
 
@@ -122,7 +129,7 @@ function UpdateDialog({ autoCheck = true, onDismiss }: Readonly<UpdateDialogProp
       unsubscribe();
       disconnectFromUpdateStream();
     };
-  }, [checkForUpdates]);
+  }, []); // Empty deps - SSE connection persists for entire component lifetime
 
   useEffect(() => {
     let unlisten: UnlistenFn | null = null;

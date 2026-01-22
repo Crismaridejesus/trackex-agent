@@ -4,6 +4,7 @@ import LoginScreen from "./components/LoginScreen";
 import ConsentWizard from "./components/ConsentWizard";
 import MainView from "./components/MainView";
 import UpdateDialog from "./components/UpdateDialog";
+import { SSEConnectionStatus } from "./components/SSEConnectionStatus";
 import { clearCachedToken } from "./utils/license-listener";
 import PermissionsHelper from "./components/PermissionsHelper";
 import "./App.css";
@@ -94,36 +95,63 @@ function App() {
 
 
 
+  // Mount UpdateDialog immediately to establish SSE connection ASAP
+  // This ensures we don't miss version broadcasts during login/consent/permissions flow
+  const updateDialog = <UpdateDialog autoCheck={true} />;
+  const connectionStatus = <SSEConnectionStatus />;
+
   if (loading) {
     return (
-      <div className="loading-container">
-        <div className="loading-spinner"></div>
-        <p>Loading TrackEx Agent...</p>
-      </div>
+      <>
+        {updateDialog}
+        {connectionStatus}
+        <div className="loading-container">
+          <div className="loading-spinner"></div>
+          <p>Loading TrackEx Agent...</p>
+        </div>
+      </>
     );
   }
 
   // Show login if not authenticated
   if (!authStatus?.is_authenticated) {
-    return <LoginScreen onLogin={handleLogin} />;
+    return (
+      <>
+        {updateDialog}
+        {connectionStatus}
+        <LoginScreen onLogin={handleLogin} />
+      </>
+    );
   }
 
   // After login: Show consent wizard if consent not given
   if (!consentStatus?.accepted) {
-    return <ConsentWizard onConsent={handleConsent} />;
+    return (
+      <>
+        {updateDialog}
+        {connectionStatus}
+        <ConsentWizard onConsent={handleConsent} />
+      </>
+    );
   }
 
   // After consent: Show permissions helper if screen recording not granted
   if (permissionsStatus && !permissionsStatus.screen_recording) {
-    return <PermissionsHelper permissionsStatus={permissionsStatus} onPermissionsGranted={handleConsent} />;
+    return (
+      <>
+        {updateDialog}
+        {connectionStatus}
+        <PermissionsHelper permissionsStatus={permissionsStatus} onPermissionsGranted={handleConsent} />
+      </>
+    );
   }
 
   // Show main application after login, consent, and permissions
   return (
     <>
+      {updateDialog}
+      {connectionStatus}
       <MainView authStatus={authStatus} onLogout={handleLogout} />
-      {/* Auto-update dialog - checks for updates on startup and periodically */}
-      <UpdateDialog autoCheck={true} />
     </>
   );
 }

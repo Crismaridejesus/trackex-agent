@@ -45,6 +45,7 @@
     "createUpdaterArtifacts": true
   },
   "plugins": {
+    "singleInstance": {},
     "updater": {
       "endpoints": [
         "http://localhost:3000/api/desktop/updates/{{target}}-{{arch}}/{{current_version}}",
