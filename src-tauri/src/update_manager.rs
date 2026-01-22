@@ -381,18 +381,55 @@ pub async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
         Ok(Ok(())) => {
             log::info!("✓ Update installed successfully, application will restart");
             
-            // macOS requires explicit restart call, Windows auto-restarts
+            // macOS requires explicit restart: launch new app then quit
             #[cfg(target_os = "macos")]
             {
-                log::info!("macOS: Explicitly restarting application after update");
-                // Small delay to ensure update is fully applied
-                tokio::time::sleep(Duration::from_millis(100)).await;
+                use std::process::Command;
                 
-                // app.restart() terminates the process immediately, no return value
-                app.restart();
-                // This line is never reached, but satisfies type checker
-                #[allow(unreachable_code)]
-                Ok(())
+                log::info!("macOS: Relaunching application after update");
+                
+                // Get the path to the current app bundle
+                // The app is at: /Applications/TrackEx Agent.app (or wherever user installed it)
+                // We need to get the path from the current executable
+                let exe_path = std::env::current_exe().map_err(|e| {
+                    format!("Failed to get current executable path: {}", e)
+                })?;
+                
+                // Navigate up from: TrackEx Agent.app/Contents/MacOS/trackex-agent
+                // to get: TrackEx Agent.app
+                let app_bundle_path = exe_path
+                    .parent()  // MacOS
+                    .and_then(|p| p.parent())  // Contents
+                    .and_then(|p| p.parent())  // TrackEx Agent.app
+                    .ok_or_else(|| "Failed to determine app bundle path".to_string())?;
+                
+                log::info!("App bundle path: {:?}", app_bundle_path);
+                
+                // Use macOS 'open' command to launch the app in a new process
+                // The '-n' flag opens a new instance, '-a' specifies the app
+                let open_result = Command::new("open")
+                    .arg("-n")  // Open new instance
+                    .arg(app_bundle_path)
+                    .spawn();
+                
+                match open_result {
+                    Ok(_) => {
+                        log::info!("✓ New app instance launched successfully");
+                        // Small delay to ensure the new process starts
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                        
+                        // Exit current process - new instance is already running
+                        log::info!("→ Terminating old instance");
+                        std::process::exit(0);
+                    }
+                    Err(e) => {
+                        log::error!("✗ Failed to launch new app instance: {:?}", e);
+                        return Err(format!(
+                            "Update installed successfully but failed to relaunch app: {:?}\n\
+                            Please manually restart TrackEx to complete the update.", e
+                        ));
+                    }
+                }
             }
             
             #[cfg(not(target_os = "macos"))]
