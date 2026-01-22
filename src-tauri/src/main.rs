@@ -98,6 +98,56 @@ fn main() {
     // Initialize logging
     logging::init();
     
+    // Setup Unix signal handlers for graceful shutdown on macOS/Linux
+    // This catches Cmd+Q, Dock quit, and system shutdown signals
+    #[cfg(unix)]
+    {
+        use signal_hook::consts::signal::*;
+        use signal_hook::iterator::Signals;
+        
+        let signals = match Signals::new(&[SIGTERM, SIGINT, SIGHUP]) {
+            Ok(s) => s,
+            Err(e) => {
+                log::error!("Failed to setup signal handlers: {}", e);
+                // Continue without signal handlers - ExitRequested will still work
+                return;
+            }
+        };
+        
+        std::thread::spawn(move || {
+            for sig in signals.forever() {
+                match sig {
+                    SIGTERM | SIGINT | SIGHUP => {
+                        log::info!("Received signal {} - initiating graceful shutdown", sig);
+                        
+                        // Prevent duplicate shutdowns
+                        if SHUTDOWN_IN_PROGRESS.load(Ordering::SeqCst) {
+                            log::info!("Shutdown already in progress, ignoring signal");
+                            continue;
+                        }
+                        
+                        SHUTDOWN_IN_PROGRESS.store(true, Ordering::SeqCst);
+                        
+                        // Force clock-out before exit
+                        tauri::async_runtime::spawn(async move {
+                            force_clock_out().await;
+                            log::info!("Force clock-out complete from signal handler, exiting");
+                            std::process::exit(0);
+                        });
+                        
+                        // Give async task time to complete (max 5 seconds)
+                        std::thread::sleep(std::time::Duration::from_secs(5));
+                        log::warn!("Force clock-out timed out, exiting anyway");
+                        std::process::exit(1);
+                    }
+                    _ => {}
+                }
+            }
+        });
+        
+        log::info!("Unix signal handlers initialized (SIGTERM, SIGINT, SIGHUP)");
+    }
+    
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
@@ -338,7 +388,12 @@ fn main() {
                         return; // Don't prevent exit
                     }
                     
+                    #[cfg(target_os = "macos")]
+                    log::info!("Exit requested on macOS (likely Cmd+Q, Dock quit, or system shutdown) with code: {:?}", code);
+                    
+                    #[cfg(not(target_os = "macos"))]
                     log::info!("Exit requested with code: {:?}", code);
+                    
                     // Mark shutdown in progress
                     SHUTDOWN_IN_PROGRESS.store(true, Ordering::SeqCst);
                     // Prevent immediate exit to allow force clock-out
