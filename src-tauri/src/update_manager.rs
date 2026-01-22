@@ -229,20 +229,21 @@ pub async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
     log::info!("Downloading update version {}...", update.version);
     log::info!("Update download URL: {}", update.download_url);
     
-    // Log the file format for debugging
-    if update.download_url.ends_with(".tar.gz") {
+    // Log the file format for debugging (convert URL to string)
+    let url_str = update.download_url.as_str();
+    if url_str.ends_with(".tar.gz") {
         log::info!("Update format: .tar.gz (correct for macOS)");
-    } else if update.download_url.ends_with(".dmg") {
+    } else if url_str.ends_with(".dmg") {
         log::error!("Update format: .dmg (INCORRECT - must be .tar.gz for auto-updates on macOS!)");
         return Err(
             "Invalid update file format: .dmg files cannot be used for auto-updates on macOS. \
             The downloadUrl in the database must point to a .tar.gz file. \
             DMG files are for initial installation only.".to_string()
         );
-    } else if update.download_url.ends_with(".msi") || update.download_url.ends_with(".exe") {
+    } else if url_str.ends_with(".msi") || url_str.ends_with(".exe") {
         log::info!("Update format: Windows installer (correct for Windows)");
     } else {
-        log::warn!("Update format: Unknown format - {}", update.download_url);
+        log::warn!("Update format: Unknown format - {}", url_str);
     }
     
     // Clone app handle for the progress callback
@@ -384,53 +385,6 @@ pub async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
     }?;
     
     Ok(())
-            let error_msg = format!("{}", e);
-            log::error!("Failed to download and install update: {}", error_msg);
-            
-            // Provide helpful error messages
-            if error_msg.contains("403") || error_msg.contains("Forbidden") {
-                format!(
-                    "Failed to install update: Download forbidden (403).\n\n\
-                    The update file URL is not publicly accessible.\n\
-                    This usually means:\n\
-                    1. The file requires authentication\n\
-                    2. The URL is incorrect or expired\n\
-                    3. Using placeholder/test URLs in development\n\n\
-                    Technical details: {}",
-                    error_msg
-                )
-            } else if error_msg.contains("404") || error_msg.contains("Not Found") {
-                format!(
-                    "Failed to install update: File not found (404).\n\n\
-                    The update file doesn't exist at the specified URL.\n\
-                    Please check the downloadUrl in the database.\n\n\
-                    Technical details: {}",
-                    error_msg
-                )
-            } else if error_msg.contains("extract") || error_msg.contains("archive") || error_msg.contains("tar") {
-                format!(
-                    "Failed to install update: Extraction error.\n\n\
-                    The downloaded file could not be extracted.\n\
-                    This usually means:\n\
-                    1. On macOS: downloadUrl points to .dmg instead of .tar.gz\n\
-                    2. The file is corrupted\n\
-                    3. Signature verification failed\n\n\
-                    IMPORTANT: macOS requires .tar.gz files for auto-updates, not .dmg!\n\n\
-                    Technical details: {}",
-                    error_msg
-                )
-            } else if error_msg.contains("signature") || error_msg.contains("verify") {
-                format!(
-                    "Failed to install update: Signature verification failed.\n\n\
-                    The update signature doesn't match.\n\
-                    This usually means:\n\
-                    1. Wrong signature in the database\n\
-                    2. File was modified after signing\n\
-                    3. Using wrong public key in tauri.conf.json\n\n\
-                    Technical details: {}",
-                    error_msg
-                )
-            } else {
 }
 
 /// Get the current app version
