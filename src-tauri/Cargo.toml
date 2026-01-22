@@ -1,6 +1,6 @@
 [package]
 name = "trackex-agent"
-version = "1.1.5"
+version = "1.1.6"
 description = "TrackEx Desktop Agent for macOS and Windows"
 authors = ["TrackEx"]
 edition = "2021"
