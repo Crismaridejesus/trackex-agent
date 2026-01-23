@@ -92,7 +92,7 @@ jobs:
           releaseBody: 'See the assets to download this version and install.'
           releaseDraft: false
           prerelease: false
-          releaseAssetNamePattern: '[name]_[platform][setup].[ext]'
+          assetNamePattern: '[name]_[platform][setup].[ext]'
           args: ${{ matrix.args }}
 
       - name: Cleanup keychain
