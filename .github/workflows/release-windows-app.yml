@@ -59,8 +59,7 @@ jobs:
         with:
           tagName: __VERSION__
           releaseName: 'TrackEx Agent v${{ github.event.inputs.version }}'
-          releaseBody: 'See the assets to download this version and install.'
           releaseDraft: false
           prerelease: false
-          assetNamePattern: '[name]_[platform][setup].[ext]'
+          assetNamePattern: '[name]_[arch].[ext]'
           args: ${{ matrix.args }}
